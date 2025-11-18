@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, render_template, send_from_directory
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import os
 import csv
 import io
@@ -9,13 +10,19 @@ import threading
 import time as time_module
 
 app = Flask(__name__)
-# Store database in /data directory which is persisted via Docker volume
-DB_DIR = '/data'
-os.makedirs(DB_DIR, exist_ok=True)
-DB_FILE = os.path.join(DB_DIR, 'family_chores.db')
+
+# Database connection configuration from environment variables
+POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
+POSTGRES_DATABASE = os.environ.get('POSTGRES_DATABASE', 'family_chores')
+POSTGRES_USER = os.environ.get('POSTGRES_USER', 'family_chores')
+POSTGRES_PASSWORD = os.environ.get('POSTGRES_PASSWORD', 'family_chores')
+POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432')
+
+# Construct database connection string
+DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DATABASE}'
 
 # Avatar storage directory
-AVATAR_DIR = os.path.join(DB_DIR, 'avatars')
+AVATAR_DIR = '/data/avatars'
 os.makedirs(AVATAR_DIR, exist_ok=True)
 
 # Allowed avatar file extensions
@@ -26,9 +33,8 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_db_connection():
-    """Get a database connection."""
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
+    """Get a database connection with dictionary cursor."""
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
 
 def get_system_timestamp():
@@ -86,7 +92,10 @@ def withdraw_cash_page():
 def get_chores():
     """Get all chores."""
     conn = get_db_connection()
-    chores = conn.execute('SELECT * FROM chores').fetchall()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('SELECT * FROM chores')
+    chores = cursor.fetchall()
+    cursor.close()
     conn.close()
     return jsonify([dict(chore) for chore in chores])
 
@@ -122,33 +131,36 @@ def update_chore(chore_id):
     params = []
     
     if 'chore' in data:
-        updates.append('chore = ?')
+        updates.append('chore = %s')
         params.append(data['chore'])
     
     if point_value is not None:
-        updates.append('point_value = ?')
+        updates.append('point_value = %s')
         params.append(point_value)
     
     if 'repeat' in data:
-        updates.append('repeat = ?')
+        updates.append('"repeat" = %s')
         params.append(repeat_value)
     
     if not updates:
+        cursor.close()
         conn.close()
         return jsonify({'error': 'No fields to update'}), 400
     
     params.append(chore_id)
     
     cursor.execute(
-        f'UPDATE chores SET {", ".join(updates)} WHERE chore_id = ?',
+        f'UPDATE chores SET {", ".join(updates)} WHERE chore_id = %s',
         params
     )
     
     if cursor.rowcount == 0:
+        cursor.close()
         conn.close()
         return jsonify({'error': 'Chore not found'}), 404
     
     conn.commit()
+    cursor.close()
     conn.close()
     
     return jsonify({'message': 'Chore updated successfully'}), 200
@@ -193,11 +205,12 @@ def create_chore():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        'INSERT INTO chores (chore, point_value, repeat) VALUES (?, ?, ?)',
+        'INSERT INTO chores (chore, point_value, "repeat") VALUES (%s, %s, %s) RETURNING chore_id',
         (data['chore'], point_value, repeat_value)
     )
+    chore_id = cursor.fetchone()[0]
     conn.commit()
-    chore_id = cursor.lastrowid
+    cursor.close()
     conn.close()
     return jsonify({'chore_id': chore_id, 'message': 'Chore created successfully'}), 201
 
@@ -247,7 +260,7 @@ def import_chores():
                 continue
             
             cursor.execute(
-                'INSERT INTO chores (chore, point_value, repeat) VALUES (?, ?, ?)',
+                'INSERT INTO chores (chore, point_value, "repeat") VALUES (%s, %s, %s)',
                 (chore, point_value, repeat)
             )
             imported += 1
@@ -256,6 +269,7 @@ def import_chores():
             print(f"Error importing chore: {e}")
     
     conn.commit()
+    cursor.close()
     conn.close()
     
     return jsonify({
@@ -269,16 +283,19 @@ def import_chores():
 def get_users():
     """Get all users with their cash balances."""
     conn = get_db_connection()
-    users = conn.execute('''
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('''
         SELECT 
             u.user_id,
             u.full_name,
             u.balance,
             u.avatar_path,
             COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM user u
+        FROM "user" u
         LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
-    ''').fetchall()
+    ''')
+    users = cursor.fetchall()
+    cursor.close()
     conn.close()
     return jsonify([dict(user) for user in users])
 
@@ -304,10 +321,11 @@ def upload_avatar(user_id):
     
     # Verify user exists
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT user_id FROM user WHERE user_id = ?', (user_id,))
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('SELECT user_id FROM "user" WHERE user_id = %s', (user_id,))
     user = cursor.fetchone()
     if not user:
+        cursor.close()
         conn.close()
         return jsonify({'error': 'User not found'}), 404
     
@@ -320,10 +338,10 @@ def upload_avatar(user_id):
     file.save(filepath)
     
     # Delete old avatar if exists
-    cursor.execute('SELECT avatar_path FROM user WHERE user_id = ?', (user_id,))
+    cursor.execute('SELECT avatar_path FROM "user" WHERE user_id = %s', (user_id,))
     old_avatar = cursor.fetchone()
-    if old_avatar and old_avatar['avatar_path']:
-        old_path = os.path.join(DB_DIR, old_avatar['avatar_path'])
+    if old_avatar and old_avatar.get('avatar_path'):
+        old_path = os.path.join(AVATAR_DIR, os.path.basename(old_avatar['avatar_path']))
         if os.path.exists(old_path):
             try:
                 os.remove(old_path)
@@ -332,8 +350,9 @@ def upload_avatar(user_id):
     
     # Update database
     relative_path = os.path.join('avatars', filename)
-    cursor.execute('UPDATE user SET avatar_path = ? WHERE user_id = ?', (relative_path, user_id))
+    cursor.execute('UPDATE "user" SET avatar_path = %s WHERE user_id = %s', (relative_path, user_id))
     conn.commit()
+    cursor.close()
     conn.close()
     
     return jsonify({
@@ -366,11 +385,12 @@ def create_user():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        'INSERT INTO user (full_name, balance) VALUES (?, ?)',
+        'INSERT INTO "user" (full_name, balance) VALUES (%s, %s) RETURNING user_id',
         (data['full_name'], data.get('balance', 0))
     )
+    user_id = cursor.fetchone()[0]
     conn.commit()
-    user_id = cursor.lastrowid
+    cursor.close()
     conn.close()
     return jsonify({'user_id': user_id, 'message': 'User created successfully'}), 201
 
@@ -379,8 +399,9 @@ def create_user():
 def get_transactions():
     """Get all transactions with user and chore names."""
     conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     # Join with users and chores to get names, include all transaction columns
-    transactions = conn.execute('''
+    cursor.execute('''
         SELECT 
             t.transaction_id,
             t.user_id,
@@ -391,10 +412,12 @@ def get_transactions():
             u.full_name as user_name,
             c.chore as chore_name
         FROM transactions t
-        LEFT JOIN user u ON t.user_id = u.user_id
+        LEFT JOIN "user" u ON t.user_id = u.user_id
         LEFT JOIN chores c ON t.chore_id = c.chore_id
         ORDER BY t.timestamp DESC
-    ''').fetchall()
+    ''')
+    transactions = cursor.fetchall()
+    cursor.close()
     conn.close()
     return jsonify([dict(transaction) for transaction in transactions])
 
@@ -420,18 +443,20 @@ def create_transaction():
         return jsonify({'error': 'value must be a number'}), 400
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     # Check user balance for redemptions (negative values)
     if value < 0:
-        cursor.execute('SELECT balance FROM user WHERE user_id = ?', (data['user_id'],))
+        cursor.execute('SELECT balance FROM "user" WHERE user_id = %s', (data['user_id'],))
         user = cursor.fetchone()
         if not user:
+            cursor.close()
             conn.close()
             return jsonify({'error': 'User not found'}), 404
         
-        current_balance = user['balance'] or 0
+        current_balance = user.get('balance') or 0
         if current_balance + value < 0:
+            cursor.close()
             conn.close()
             return jsonify({'error': f'Insufficient points. User has {current_balance} points.'}), 400
     
@@ -451,13 +476,14 @@ def create_transaction():
     timestamp = data.get('timestamp') or get_system_timestamp()
     
     cursor.execute(
-        'INSERT INTO transactions (user_id, chore_id, value, transaction_type, timestamp) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO transactions (user_id, chore_id, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
         (data['user_id'], data.get('chore_id'), value, transaction_type, timestamp)
     )
+    transaction_id = cursor.fetchone()[0]
     
     # Update user balance
     cursor.execute(
-        'UPDATE user SET balance = balance + ? WHERE user_id = ?',
+        'UPDATE "user" SET balance = balance + %s WHERE user_id = %s',
         (value, data['user_id'])
     )
     
@@ -469,19 +495,20 @@ def create_transaction():
         
         # Ensure cash_balance record exists
         cursor.execute('''
-            INSERT OR IGNORE INTO cash_balances (user_id, cash_balance) 
-            VALUES (?, 0.0)
+            INSERT INTO cash_balances (user_id, cash_balance) 
+            VALUES (%s, 0.0)
+            ON CONFLICT (user_id) DO NOTHING
         ''', (data['user_id'],))
         
         # Update cash_balance
         cursor.execute('''
             UPDATE cash_balances 
-            SET cash_balance = cash_balance + ? 
-            WHERE user_id = ?
+            SET cash_balance = cash_balance + %s 
+            WHERE user_id = %s
         ''', (cash_amount, data['user_id']))
     
     conn.commit()
-    transaction_id = cursor.lastrowid
+    cursor.close()
     conn.close()
     return jsonify({'transaction_id': transaction_id, 'message': 'Transaction created successfully'}), 201
 
@@ -495,7 +522,10 @@ def settings_page():
 def get_settings():
     """Get all settings."""
     conn = get_db_connection()
-    settings = conn.execute('SELECT setting_key, setting_value FROM settings').fetchall()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('SELECT setting_key, setting_value FROM settings')
+    settings = cursor.fetchall()
+    cursor.close()
     conn.close()
     
     settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
@@ -519,25 +549,30 @@ def update_settings():
     if 'automatic_daily_cash_out' in data:
         value = '1' if data['automatic_daily_cash_out'] else '0'
         cursor.execute('''
-            INSERT OR REPLACE INTO settings (setting_key, setting_value)
-            VALUES ('automatic_daily_cash_out', ?)
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('automatic_daily_cash_out', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
         ''', (value,))
     
     if 'max_rollover_points' in data:
         try:
             max_points = int(data['max_rollover_points'])
             if max_points < 0:
+                cursor.close()
                 conn.close()
                 return jsonify({'error': 'Max rollover points must be non-negative'}), 400
             cursor.execute('''
-                INSERT OR REPLACE INTO settings (setting_key, setting_value)
-                VALUES ('max_rollover_points', ?)
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('max_rollover_points', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
             ''', (str(max_points),))
         except (ValueError, TypeError):
+            cursor.close()
             conn.close()
             return jsonify({'error': 'Max rollover points must be a number'}), 400
     
     conn.commit()
+    cursor.close()
     conn.close()
     
     return jsonify({'message': 'Settings updated successfully'}), 200
@@ -557,8 +592,9 @@ def reset_points():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE user SET balance = 0')
+        cursor.execute('UPDATE "user" SET balance = 0')
         conn.commit()
+        cursor.close()
         conn.close()
         return jsonify({'message': 'All points balances have been reset to 0'}), 200
     except Exception as e:
@@ -585,6 +621,7 @@ def reset_transactions():
         cursor = conn.cursor()
         cursor.execute('DELETE FROM transactions')
         conn.commit()
+        cursor.close()
         conn.close()
         return jsonify({'message': 'All transactions have been deleted'}), 200
     except Exception as e:
@@ -611,37 +648,40 @@ def withdraw_cash():
         return jsonify({'error': 'Amount must be a number'}), 400
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     # Check user exists and get cash balance
     cursor.execute('''
         SELECT u.user_id, COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM user u
+        FROM "user" u
         LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
-        WHERE u.user_id = ?
+        WHERE u.user_id = %s
     ''', (data['user_id'],))
     user = cursor.fetchone()
     
     if not user:
+        cursor.close()
         conn.close()
         return jsonify({'error': 'User not found'}), 404
     
-    current_cash = user['cash_balance'] or 0.0
+    current_cash = user.get('cash_balance') or 0.0
     if current_cash < amount:
+        cursor.close()
         conn.close()
         return jsonify({'error': f'Insufficient cash balance. User has ${current_cash:.2f}.'}), 400
     
     # Ensure cash_balance record exists
     cursor.execute('''
-        INSERT OR IGNORE INTO cash_balances (user_id, cash_balance) 
-        VALUES (?, 0.0)
+        INSERT INTO cash_balances (user_id, cash_balance) 
+        VALUES (%s, 0.0)
+        ON CONFLICT (user_id) DO NOTHING
     ''', (data['user_id'],))
     
     # Update cash_balance (subtract amount)
     cursor.execute('''
         UPDATE cash_balances 
-        SET cash_balance = cash_balance - ? 
-        WHERE user_id = ?
+        SET cash_balance = cash_balance - %s 
+        WHERE user_id = %s
     ''', (float(amount), data['user_id']))
     
     # Create transaction record for the withdrawal
@@ -649,11 +689,13 @@ def withdraw_cash():
     # Store timestamp in system timezone
     cursor.execute('''
         INSERT INTO transactions (user_id, chore_id, value, transaction_type, timestamp)
-        VALUES (?, NULL, ?, 'cash_withdrawal', ?)
+        VALUES (%s, NULL, %s, 'cash_withdrawal', %s)
+        RETURNING transaction_id
     ''', (data['user_id'], -amount, get_system_timestamp()))
+    transaction_id = cursor.fetchone()[0]
     
     conn.commit()
-    transaction_id = cursor.lastrowid
+    cursor.close()
     conn.close()
     
     return jsonify({
@@ -665,33 +707,35 @@ def withdraw_cash():
 def get_setting(key, default):
     """Get a setting value from the database."""
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT setting_value FROM settings WHERE setting_key = ?', (key,))
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (key,))
     result = cursor.fetchone()
+    cursor.close()
     conn.close()
     
     if result:
         if key == 'automatic_daily_cash_out':
-            return result['setting_value'] == '1'
+            return result.get('setting_value') == '1'
         elif key == 'max_rollover_points':
-            return int(result['setting_value'])
-        return result['setting_value']
+            return int(result.get('setting_value'))
+        return result.get('setting_value')
     return default
 
 def process_daily_cash_out():
     """Process daily cash out for all users at midnight."""
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     automatic_cash_out = get_setting('automatic_daily_cash_out', True)
     max_rollover = get_setting('max_rollover_points', 4)
     
     # Get all users
-    users = cursor.execute('SELECT user_id, balance FROM user').fetchall()
+    cursor.execute('SELECT user_id, balance FROM "user"')
+    users = cursor.fetchall()
     
     for user in users:
-        user_id = user['user_id']
-        balance = user['balance'] or 0
+        user_id = user.get('user_id')
+        balance = user.get('balance') or 0
         
         if automatic_cash_out:
             # Convert (balance - max_rollover) to cash, keep max_rollover points
@@ -703,40 +747,42 @@ def process_daily_cash_out():
                 
                 # Ensure cash_balance record exists
                 cursor.execute('''
-                    INSERT OR IGNORE INTO cash_balances (user_id, cash_balance) 
-                    VALUES (?, 0.0)
+                    INSERT INTO cash_balances (user_id, cash_balance) 
+                    VALUES (%s, 0.0)
+                    ON CONFLICT (user_id) DO NOTHING
                 ''', (user_id,))
                 
                 # Update cash_balance
                 cursor.execute('''
                     UPDATE cash_balances 
-                    SET cash_balance = cash_balance + ? 
-                    WHERE user_id = ?
+                    SET cash_balance = cash_balance + %s 
+                    WHERE user_id = %s
                 ''', (cash_amount, user_id))
                 
                 # Update point balance to max_rollover
                 cursor.execute('''
-                    UPDATE user 
-                    SET balance = ? 
-                    WHERE user_id = ?
+                    UPDATE "user" 
+                    SET balance = %s 
+                    WHERE user_id = %s
                 ''', (rollover, user_id))
                 
                 # Create transaction record for the conversion
                 # Store timestamp in system timezone
                 cursor.execute('''
                     INSERT INTO transactions (user_id, chore_id, value, transaction_type, timestamp)
-                    VALUES (?, NULL, ?, 'points_redemption', ?)
+                    VALUES (%s, NULL, %s, 'points_redemption', %s)
                 ''', (user_id, -points_to_convert, get_system_timestamp()))
         else:
             # Just cap the balance at max_rollover if it exceeds it
             if balance > max_rollover:
                 cursor.execute('''
-                    UPDATE user 
-                    SET balance = ? 
-                    WHERE user_id = ?
+                    UPDATE "user" 
+                    SET balance = %s 
+                    WHERE user_id = %s
                 ''', (max_rollover, user_id))
     
     conn.commit()
+    cursor.close()
     conn.close()
     print(f"Daily cash out processed at {datetime.now()}")
 
@@ -768,62 +814,12 @@ def start_daily_cash_out_scheduler():
     print("Daily cash out scheduler started")
 
 if __name__ == '__main__':
-    # Ensure database exists and has avatar_path column
-    if not os.path.exists(DB_FILE):
-        from init_db import init_database
+    # Ensure database is initialized
+    from init_db import init_database
+    try:
         init_database()
-    else:
-        # Add avatar_path column if it doesn't exist (migration)
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        try:
-            cursor.execute('ALTER TABLE user ADD COLUMN avatar_path TEXT')
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        # Create cash_balances table if it doesn't exist (migration)
-        try:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS cash_balances (
-                    user_id INTEGER PRIMARY KEY,
-                    cash_balance REAL DEFAULT 0.0,
-                    FOREIGN KEY (user_id) REFERENCES user(user_id)
-                )
-            ''')
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass  # Table already exists
-        
-        # Create settings table if it doesn't exist (migration)
-        try:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS settings (
-                    setting_key TEXT PRIMARY KEY,
-                    setting_value TEXT NOT NULL
-                )
-            ''')
-            # Initialize default settings if they don't exist
-            cursor.execute('''
-                INSERT OR IGNORE INTO settings (setting_key, setting_value) 
-                VALUES ('automatic_daily_cash_out', '1')
-            ''')
-            cursor.execute('''
-                INSERT OR IGNORE INTO settings (setting_key, setting_value) 
-                VALUES ('max_rollover_points', '4')
-            ''')
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass  # Table already exists
-        
-        # Add transaction_type column if it doesn't exist (migration)
-        try:
-            cursor.execute('ALTER TABLE transactions ADD COLUMN transaction_type TEXT')
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        conn.close()
+    except Exception as e:
+        print(f"Note: Database initialization check failed (this is OK if tables already exist): {e}")
     
     # Start background thread for daily cash out
     start_daily_cash_out_scheduler()
