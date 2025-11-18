@@ -27,6 +27,24 @@
             text-align: center;
             color: white;
             margin-bottom: 40px;
+            position: relative;
+        }
+
+        .settings-link {
+            position: absolute;
+            top: 0;
+            right: 0;
+            color: white;
+            text-decoration: none;
+            font-size: 24px;
+            padding: 8px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            display: inline-block;
+        }
+
+        .settings-link:hover {
+            background-color: rgba(255, 255, 255, 0.2);
         }
 
         h1 {
@@ -84,6 +102,7 @@
 <body>
     <div class="container">
         <header>
+            <a href="/settings" class="settings-link" title="Settings">⚙️</a>
             <h1>🏠 Family Chores</h1>
             <p class="subtitle">Manage & track your family's chores</p>
         </header>
@@ -91,8 +110,9 @@
         <div class="nav-cards">
             <a href="/users" class="card">
                 <div class="card-icon">👤</div>
-                <h2>Users & Point Balances</h2>
-                <p>View & add family members.                
+                <h2>Users & Balances</h2>
+                <p>View & add family members.
+                <br>View user's point & cash balances.        
                 <br>Award points for completed chores.
                 <br>Redeem points for rewards.
                 <br>View chore & reward history.</p>

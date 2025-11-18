@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Withdraw Cash - Family Chores</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .header-nav {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        select,
+        input[type="number"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        select:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .cash-preview {
+            background: #f8f9ff;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .cash-preview-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .cash-preview-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 12px;
+        }
+
+        .balance-preview {
+            font-size: 16px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .user-balance {
+            font-size: 12px;
+            color: #4caf50;
+            margin-top: 4px;
+            font-weight: 600;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .amount-input-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .amount-input-group input {
+            flex: 1;
+        }
+
+        .amount-quick-select {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        .quick-select-btn {
+            padding: 6px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .quick-select-btn:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-nav">
+                <a href="/users" class="nav-link nav-link-left">← Users</a>
+            </div>
+            <h1>💵 Withdraw Cash</h1>
+            <p class="subtitle">Withdraw cash from your balance</p>
+        </header>
+
+        <div class="card">
+            <div id="message" class="message"></div>
+
+            <form id="withdrawForm">
+                <div class="form-group">
+                    <label for="user_id">User *</label>
+                    <select id="user_id" name="user_id" required>
+                        <option value="">Select a user...</option>
+                    </select>
+                    <div id="userCashBalance" class="user-balance" style="display: none;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="amount">Amount to Withdraw *</label>
+                    <div class="amount-input-group">
+                        <span style="font-size: 20px; color: #666;">$</span>
+                        <input type="number" id="amount" name="amount" required min="1" step="1" value="" placeholder="Enter whole dollar amount">
+                    </div>
+                    <div class="amount-quick-select">
+                        <button type="button" class="quick-select-btn" onclick="setAmount(1)">$1</button>
+                        <button type="button" class="quick-select-btn" onclick="setAmount(5)">$5</button>
+                        <button type="button" class="quick-select-btn" onclick="setAmount(10)">$10</button>
+                        <button type="button" class="quick-select-btn" onclick="setAmount(20)">$20</button>
+                        <button type="button" class="quick-select-btn" onclick="setAmount(50)">$50</button>
+                        <button type="button" class="quick-select-btn" onclick="setAmount(100)">$100</button>
+                    </div>
+                    <div class="help-text">Amount must be a whole dollar (no cents)</div>
+                </div>
+
+                <div id="cashPreview" class="cash-preview" style="display: none;">
+                    <div class="cash-preview-label">Withdrawal Summary</div>
+                    <div class="cash-preview-value" id="cashPreviewValue">$0</div>
+                    <div class="balance-preview" id="balancePreview"></div>
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="btn-primary" id="submitBtn" disabled>Withdraw Cash</button>
+                    <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
+                </div>
+            </form>
+        </div>
+
+        <a href="/" class="back-link">← Home</a>
+    </div>
+
+    <script>
+        let users = [];
+        let selectedUser = null;
+
+        function showMessage(text, isError = false) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
+            messageDiv.style.display = 'block';
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function resetForm() {
+            document.getElementById('withdrawForm').reset();
+            selectedUser = null;
+            document.getElementById('cashPreview').style.display = 'none';
+            document.getElementById('userCashBalance').style.display = 'none';
+            document.getElementById('message').style.display = 'none';
+            updateSubmitButton();
+        }
+
+        function setAmount(amount) {
+            document.getElementById('amount').value = amount;
+            updatePreview();
+        }
+
+        function updatePreview() {
+            const amount = parseFloat(document.getElementById('amount').value) || 0;
+            const userId = document.getElementById('user_id').value;
+            
+            if (amount > 0 && amount === Math.floor(amount) && userId) {
+                const user = users.find(u => u.user_id == userId);
+                if (user) {
+                    const cashBalance = user.cash_balance || 0;
+                    const newBalance = cashBalance - amount;
+                    
+                    if (newBalance >= 0) {
+                        document.getElementById('cashPreviewValue').textContent = `$${amount.toFixed(2)}`;
+                        document.getElementById('balancePreview').textContent = `New balance: $${newBalance.toFixed(2)}`;
+                        document.getElementById('cashPreview').style.display = 'block';
+                    } else {
+                        document.getElementById('cashPreview').style.display = 'none';
+                    }
+                }
+            } else {
+                document.getElementById('cashPreview').style.display = 'none';
+            }
+            updateSubmitButton();
+        }
+
+        function updateSubmitButton() {
+            const amount = parseFloat(document.getElementById('amount').value) || 0;
+            const userId = document.getElementById('user_id').value;
+            const user = users.find(u => u.user_id == userId);
+            
+            const canSubmit = userId && 
+                             amount > 0 && 
+                             amount === Math.floor(amount) && 
+                             user && 
+                             (user.cash_balance || 0) >= amount;
+            
+            document.getElementById('submitBtn').disabled = !canSubmit;
+        }
+
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users');
+                users = await response.json();
+                
+                const userSelect = document.getElementById('user_id');
+                userSelect.innerHTML = '<option value="">Select a user...</option>';
+                
+                users.forEach(user => {
+                    const option = document.createElement('option');
+                    option.value = user.user_id;
+                    option.textContent = `${user.full_name} (Cash: $${(user.cash_balance || 0).toFixed(2)})`;
+                    userSelect.appendChild(option);
+                });
+
+                // Pre-select user from URL parameter
+                const userIdParam = getUrlParameter('user_id');
+                if (userIdParam) {
+                    userSelect.value = userIdParam;
+                    // Trigger change event to update balance display
+                    const changeEvent = new Event('change');
+                    userSelect.dispatchEvent(changeEvent);
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+                showMessage('Error loading users. Please refresh the page.', true);
+            }
+        }
+
+        // Update user cash balance display
+        document.getElementById('user_id').addEventListener('change', (e) => {
+            const userId = e.target.value;
+            if (userId) {
+                selectedUser = users.find(u => u.user_id == userId);
+                if (selectedUser) {
+                    const balanceDiv = document.getElementById('userCashBalance');
+                    balanceDiv.textContent = `Current cash balance: $${(selectedUser.cash_balance || 0).toFixed(2)}`;
+                    balanceDiv.style.display = 'block';
+                }
+            } else {
+                selectedUser = null;
+                document.getElementById('userCashBalance').style.display = 'none';
+            }
+            updatePreview();
+            updateSubmitButton();
+        });
+
+        // Validate amount input (must be whole dollar)
+        document.getElementById('amount').addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            if (value && value !== Math.floor(value)) {
+                e.target.setCustomValidity('Amount must be a whole dollar amount');
+            } else {
+                e.target.setCustomValidity('');
+            }
+            updatePreview();
+            updateSubmitButton();
+        });
+
+        // Form submission
+        document.getElementById('withdrawForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const amount = parseFloat(formData.get('amount'));
+            const userId = parseInt(formData.get('user_id'));
+
+            if (!userId) {
+                showMessage('Please select a user', true);
+                return;
+            }
+
+            if (!amount || amount < 1 || amount !== Math.floor(amount)) {
+                showMessage('Amount must be a positive whole dollar amount', true);
+                return;
+            }
+
+            const user = users.find(u => u.user_id == userId);
+            if (!user) {
+                showMessage('User not found', true);
+                return;
+            }
+
+            const cashBalance = user.cash_balance || 0;
+            if (amount > cashBalance) {
+                showMessage(`Insufficient cash balance. User only has $${cashBalance.toFixed(2)}.`, true);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/withdraw-cash', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        amount: amount
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(`Successfully withdrew $${amount.toFixed(2)}! New balance: $${result.new_balance.toFixed(2)}`);
+                    resetForm();
+                    // Reload users to get updated balances
+                    await loadUsers();
+                } else {
+                    showMessage(result.error || 'Error withdrawing cash', true);
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', true);
+                console.error('Error:', error);
+            }
+        });
+
+        // Load users when page loads
+        loadUsers();
+    </script>
+</body>
+</html>
+

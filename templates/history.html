@@ -204,13 +204,17 @@
             color: #e65100;
         }
 
+        .type-withdrawal {
+            background: #fff3e0;
+            color: #e60800;
+        }
+
         .chore-name {
             color: #333;
-            font-weight: 500;
         }
 
         .redemption-info {
-            color: #666;
+            color: #333;
             font-style: italic;
         }
 
@@ -226,6 +230,11 @@
         .points-negative {
             color: #ff9800;
         }
+
+        .withdrawal {
+            color: #e60800;
+        }
+      
 
         .timestamp {
             color: #666;
@@ -320,7 +329,7 @@
                                 <span class="sort-indicator" id="sort-description"></span>
                             </th>
                             <th onclick="sortTable('value')">
-                                Points
+                                Amount
                                 <span class="sort-indicator" id="sort-value"></span>
                             </th>
                             <th onclick="sortTable('timestamp')">
@@ -363,12 +372,45 @@
         }
 
         function getTransactionType(transaction) {
-            return transaction.value < 0 ? 'redemption' : 'chore';
+            // Return the actual transaction_type from database, with fallback for legacy data
+            if (transaction.transaction_type) {
+                return transaction.transaction_type;
+            }
+            // Fallback for transactions without transaction_type (legacy data)
+            if (transaction.value < 0) {
+                return 'points_redemption';
+            } else {
+                return 'chore_completed';
+            }
+        }
+
+        function getTransactionTypeLabel(transaction) {
+            // Get display label for transaction type
+            const type = getTransactionType(transaction);
+            switch(type) {
+                case 'chore_completed':
+                    return 'Chore Completed';
+                case 'points_redemption':
+                    return 'Points Redemption';
+                case 'cash_withdrawal':
+                    return 'Cash Withdrawal';
+                default:
+                    // Fallback for legacy or unknown types
+                    if (transaction.value < 0) {
+                        return 'Points Redemption';
+                    } else {
+                        return 'Chore Completed';
+                    }
+            }
         }
 
         function getTransactionDescription(transaction) {
-            if (transaction.value < 0) {
-                // Redemption
+            if (transaction.transaction_type === 'cash_withdrawal') {
+                // Cash withdrawal
+                const amount = Math.abs(transaction.value);
+                return `Cash withdrawal: $${amount.toFixed(2)}`;
+            } else if (transaction.value < 0 || transaction.transaction_type === 'points_redemption') {
+                // Points redemption
                 const points = Math.abs(transaction.value);
                 const dollars = (points / 5) * 1;
                 const minutes = (points / 5) * 30;
@@ -436,8 +478,8 @@
                             bVal = (b.user_name || '').toLowerCase();
                             break;
                         case 'type':
-                            aVal = getTransactionType(a);
-                            bVal = getTransactionType(b);
+                            aVal = getTransactionTypeLabel(a);
+                            bVal = getTransactionTypeLabel(b);
                             break;
                         case 'description':
                             aVal = getTransactionDescription(a).toLowerCase();
@@ -477,28 +519,47 @@
 
             tableBody.innerHTML = filteredTransactions.map(transaction => {
                 const type = getTransactionType(transaction);
+                const typeLabel = getTransactionTypeLabel(transaction);
                 const description = getTransactionDescription(transaction);
-                const isRedemption = transaction.value < 0;
+                const isRedemption = transaction.transaction_type === 'points_redemption' || (transaction.value < 0 && !transaction.transaction_type);
+                const isWithdrawal = transaction.transaction_type === 'cash_withdrawal';
+                const isChore = transaction.transaction_type === 'chore_completed' || (!transaction.transaction_type && transaction.value >= 0);
+                
+                // Determine CSS class for transaction type badge
+                let typeClass = 'type-chore';
+                if (type === 'points_redemption') {
+                    typeClass = 'type-redemption';
+                } else if (type === 'cash_withdrawal') {
+                    typeClass = 'type-withdrawal';
+                }
+                
+                let valueDisplay = '';
+                if (isWithdrawal) {
+                    valueDisplay = `<span class="points-value withdrawal">-$${Math.abs(transaction.value).toFixed(2)}</span>`;
+                } else {
+                    valueDisplay = `<span class="points-value ${isRedemption ? 'points-negative' : 'points-positive'}">
+                        ${isRedemption ? '' : '+'}${transaction.value}
+                    </span>`;
+                }
                 
                 return `
                     <tr>
-                        
                         <td class="user-name">${escapeHtml(transaction.user_name || 'Unknown')}</td>
                         <td>
-                            <span class="transaction-type type-${type}">
-                                ${type === 'redemption' ? 'Redemption' : 'Chore'}
+                            <span class="transaction-type ${typeClass}">
+                                ${escapeHtml(typeLabel)}
                             </span>
                         </td>
                         <td>
-                            ${isRedemption 
+                            ${isWithdrawal 
+                                ? `<span class="redemption-info">${escapeHtml(description)}</span>`
+                                : isRedemption 
                                 ? `<span class="redemption-info">${escapeHtml(description)}</span>`
                                 : `<span class="chore-name">${escapeHtml(description)}</span>`
                             }
                         </td>
                         <td>
-                            <span class="points-value ${isRedemption ? 'points-negative' : 'points-positive'}">
-                                ${isRedemption ? '' : '+'}${transaction.value}
-                            </span>
+                            ${valueDisplay}
                         </td>
                         <td class="timestamp">${escapeHtml(formatTimestamp(transaction.timestamp))}</td>
                     </tr>

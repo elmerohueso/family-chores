@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Family Chores</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .header-nav {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        .setting-item {
+            margin-bottom: 32px;
+        }
+
+        .setting-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .setting-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .setting-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .setting-description {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: #667eea;
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .number-input {
+            width: 100px;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .number-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 18px;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .reset-section {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .reset-section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .reset-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn-reset {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-reset:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-reset.danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-reset.danger:hover {
+            background: #c82333;
+        }
+
+        .confirmation-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .confirmation-dialog.show {
+            display: flex;
+        }
+
+        .confirmation-content {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        .confirmation-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+        }
+
+        .confirmation-message {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .confirmation-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn-confirm {
+            flex: 1;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-confirm.danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-confirm.danger:hover {
+            background: #c82333;
+        }
+
+        .btn-confirm.secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .btn-confirm.secondary:hover {
+            background: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-nav">
+                <a href="/" class="nav-link nav-link-left">← Home</a>
+            </div>
+            <h1>⚙️ Settings</h1>
+            <p class="subtitle">Configure automatic daily cash out</p>
+        </header>
+
+        <div class="card">
+            <div id="loading" class="loading">Loading settings...</div>
+            <div id="settingsContainer" style="display: none;">
+                <div id="message" class="message"></div>
+
+                <form id="settingsForm">
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <span class="setting-title">Automatic Daily Cash Out</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="automaticDailyCashOut">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-description">
+                            When enabled, excess points (above Max Rollover Points) are automatically converted to cash at midnight at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
+                        </div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <span class="setting-title">Max Rollover Points</span>
+                        </div>
+                        <div class="setting-description">
+                            Maximum number of points that can be carried over to the next day. Points above this amount will be converted to cash (if Automatic Daily Cash Out is enabled) or capped at this amount (if disabled).
+                        </div>
+                        <div class="input-group" style="margin-top: 12px;">
+                            <input type="number" id="maxRolloverPoints" class="number-input" min="0" required>
+                            <span style="color: #666;">points</span>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button type="submit" class="btn-primary">Save Settings</button>
+                        <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
+                    </div>
+                </form>
+
+                <div class="reset-section">
+                    <div class="reset-section-title">Reset Balances</div>
+                    <div class="reset-buttons">
+                        <button class="btn-reset danger" onclick="confirmResetPoints()">Reset All Points Balances</button>
+                        <button class="btn-reset danger" onclick="confirmResetCash()">Reset All Cash Balances</button>
+                    </div>
+                </div>
+
+                <div class="reset-section">
+                    <div class="reset-section-title">Reset History</div>
+                    <div class="reset-buttons">
+                        <button class="btn-reset danger" onclick="confirmResetTransactions()">Reset Historical Data</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirmation Dialog -->
+        <div id="confirmationDialog" class="confirmation-dialog">
+            <div class="confirmation-content">
+                <div class="confirmation-title" id="confirmTitle">Confirm Reset</div>
+                <div class="confirmation-message" id="confirmMessage"></div>
+                <div class="confirmation-buttons">
+                    <button class="btn-confirm danger" id="confirmBtn" onclick="executeReset()">Confirm</button>
+                    <button class="btn-confirm secondary" onclick="closeConfirmation()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <a href="/" class="back-link">← Home</a>
+    </div>
+
+    <script>
+        function showMessage(text, isError = false) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
+            messageDiv.style.display = 'block';
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function resetForm() {
+            loadSettings();
+        }
+
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                const settings = await response.json();
+
+                document.getElementById('automaticDailyCashOut').checked = settings.automatic_daily_cash_out;
+                document.getElementById('maxRolloverPoints').value = settings.max_rollover_points;
+
+                const loadingDiv = document.getElementById('loading');
+                const settingsContainer = document.getElementById('settingsContainer');
+
+                loadingDiv.style.display = 'none';
+                settingsContainer.style.display = 'block';
+            } catch (error) {
+                console.error('Error loading settings:', error);
+                document.getElementById('loading').textContent = 'Error loading settings. Please try again.';
+            }
+        }
+
+        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const data = {
+                automatic_daily_cash_out: document.getElementById('automaticDailyCashOut').checked,
+                max_rollover_points: parseInt(document.getElementById('maxRolloverPoints').value)
+            };
+
+            if (data.max_rollover_points < 0) {
+                showMessage('Max rollover points must be non-negative', true);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('Settings saved successfully!');
+                } else {
+                    showMessage(result.error || 'Error saving settings', true);
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', true);
+                console.error('Error:', error);
+            }
+        });
+
+        let pendingResetType = null;
+
+        function confirmResetPoints() {
+            pendingResetType = 'points';
+            document.getElementById('confirmTitle').textContent = 'Reset All Points Balances';
+            document.getElementById('confirmMessage').textContent = 'Are you sure you want to reset all users\' points balances to 0? This action cannot be undone.';
+            document.getElementById('confirmationDialog').classList.add('show');
+        }
+
+        function confirmResetCash() {
+            pendingResetType = 'cash';
+            document.getElementById('confirmTitle').textContent = 'Reset All Cash Balances';
+            document.getElementById('confirmMessage').textContent = 'Are you sure you want to reset all users\' cash balances to $0.00? This action cannot be undone.';
+            document.getElementById('confirmationDialog').classList.add('show');
+        }
+
+        function confirmResetTransactions() {
+            pendingResetType = 'transactions';
+            document.getElementById('confirmTitle').textContent = 'Reset Historical Data';
+            document.getElementById('confirmMessage').textContent = 'Are you sure you want to delete all historical data? This will remove all chore completions, point redemptions, and cash withdrawals from the history. This action cannot be undone.';
+            document.getElementById('confirmationDialog').classList.add('show');
+        }
+
+        function closeConfirmation() {
+            document.getElementById('confirmationDialog').classList.remove('show');
+            pendingResetType = null;
+        }
+
+        async function executeReset() {
+            if (!pendingResetType) {
+                closeConfirmation();
+                return;
+            }
+
+            let endpoint;
+            let resetType = pendingResetType;
+            
+            if (pendingResetType === 'points') {
+                endpoint = '/api/reset-points';
+            } else if (pendingResetType === 'cash') {
+                endpoint = '/api/reset-cash';
+            } else if (pendingResetType === 'transactions') {
+                endpoint = '/api/reset-transactions';
+            } else {
+                closeConfirmation();
+                return;
+            }
+            
+            closeConfirmation();
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    let message = result.message;
+                    if (!message) {
+                        if (resetType === 'points') {
+                            message = 'Points balances reset successfully!';
+                        } else if (resetType === 'cash') {
+                            message = 'Cash balances reset successfully!';
+                        } else if (resetType === 'transactions') {
+                            message = 'All transactions deleted successfully!';
+                        }
+                    }
+                    showMessage(message);
+                } else {
+                    showMessage(result.error || `Error resetting ${resetType}`, true);
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', true);
+                console.error('Error:', error);
+            }
+        }
+
+        // Close dialog when clicking outside
+        document.getElementById('confirmationDialog').addEventListener('click', (e) => {
+            if (e.target.id === 'confirmationDialog') {
+                closeConfirmation();
+            }
+        });
+
+        // Load settings when page loads
+        loadSettings();
+    </script>
+</body>
+</html>
+

@@ -660,7 +660,8 @@
                     body: JSON.stringify({
                         user_id: userId,
                         chore_id: null,
-                        value: -points  // Negative value for redemption
+                        value: -points,  // Negative value for redemption
+                        redemption_type: selectedRedemptionType  // Pass redemption type to identify as redemption
                     })
                 });
 

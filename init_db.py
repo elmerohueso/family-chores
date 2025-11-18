@@ -37,11 +37,6 @@ def init_database():
         )
     ''')
     
-    # Add avatar_path column if it doesn't exist (for existing databases)
-    try:
-        cursor.execute('ALTER TABLE user ADD COLUMN avatar_path TEXT')
-    except sqlite3.OperationalError:
-        pass  # Column already exists
     
     # Create transactions table
     cursor.execute('''
@@ -50,10 +45,39 @@ def init_database():
             user_id INTEGER NOT NULL,
             chore_id INTEGER,
             value INTEGER NOT NULL,
+            transaction_type TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES user(user_id),
             FOREIGN KEY (chore_id) REFERENCES chores(chore_id)
         )
+    ''')
+    
+    
+    # Create cash_balances table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cash_balances (
+            user_id INTEGER PRIMARY KEY,
+            cash_balance REAL DEFAULT 0.0,
+            FOREIGN KEY (user_id) REFERENCES user(user_id)
+        )
+    ''')
+    
+    # Create settings table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL
+        )
+    ''')
+    
+    # Initialize default settings
+    cursor.execute('''
+        INSERT OR IGNORE INTO settings (setting_key, setting_value) 
+        VALUES ('automatic_daily_cash_out', '1')
+    ''')
+    cursor.execute('''
+        INSERT OR IGNORE INTO settings (setting_key, setting_value) 
+        VALUES ('max_rollover_points', '4')
     ''')
     
     # Commit changes and close connection
@@ -61,7 +85,7 @@ def init_database():
     conn.close()
     
     print(f"Database '{DB_FILE}' initialized successfully!")
-    print("Tables created: chores, user, transactions")
+    print("Tables created: chores, user, transactions, cash_balances, settings")
 
 if __name__ == '__main__':
     init_database()

@@ -243,14 +243,29 @@
         }
 
         .user-balance {
-            font-size: 32px;
+            font-size: 20px;
             font-weight: 700;
             color: #667eea;
             margin-bottom: 8px;
         }
 
         .balance-label {
-            font-size: 12px;
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .cash-balance {
+            font-size: 20px;
+            font-weight: 600;
+            color: #4caf50;
+            margin-top: 8px;
+            margin-bottom: 4px;
+        }
+
+        .cash-balance-label {
+            font-size: 11px;
             color: #666;
             text-transform: uppercase;
             letter-spacing: 1px;
@@ -357,6 +372,90 @@
             color: white;
             font-size: 18px;
         }
+
+        .system-info {            
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            width: 30%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .system-time {
+            font-size: 18px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .system-time-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+            text-align: center;
+        }
+
+        .system-time-value {
+            font-size: 24px;
+            color: #667eea;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .btn-manual-cashout {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 12px auto 0;
+        }
+
+        .btn-manual-cashout:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-manual-cashout:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .system-message {
+            width: 50%;
+            margin: 15px auto 0;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .system-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .system-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -367,7 +466,7 @@
                 <a href="/add-user" class="nav-link nav-link-right">Add User →</a>
             </div>
             <h1>👥 Family Members</h1>
-            <p class="subtitle">View all users and their point balances</p>
+            <p class="subtitle">View all users and their balances</p>
         </header>
 
         <div class="card">
@@ -379,6 +478,14 @@
                     <div class="empty-state-text">No users found. Add your first family member!</div>
                     <a href="/add-user" class="btn-add-user">Add User</a>
                 </div>
+            </div>
+            <div style="text-align: center;">
+                <div class="system-time-label">System Time</div>
+                <div class="system-time-value" id="systemTime">--:-- --</div>
+            </div>
+            <div style="text-align: center; width: 100%;">
+                <button class="btn-manual-cashout" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run Daily Cash Out</button>
+                <div id="systemMessage" class="system-message"></div>
             </div>
         </div>
 
@@ -441,10 +548,13 @@
                             }
                             <div class="user-name" style="position: relative; z-index: 2;">${escapeHtml(user.full_name)}</div>
                             <div class="user-balance" style="position: relative; z-index: 2;">${user.balance || 0}</div>
-                            <div class="balance-label" style="position: relative; z-index: 2;">Points</div>
+                            <div class="balance-label" style="position: relative; z-index: 2;">Points Balance</div>
+                            <div class="cash-balance" style="position: relative; z-index: 2;">$${(user.cash_balance || 0).toFixed(2)}</div>
+                            <div class="cash-balance-label" style="position: relative; z-index: 2;">Cash Balance</div>
                             <div class="user-actions">
                                 <a href="/record-chore?user_id=${user.user_id}" class="user-action-btn primary" onclick="event.stopPropagation();">Record a Chore</a>
                                 <a href="/redeem-points?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();">Redeem Points</a>
+                                <a href="/withdraw-cash?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();" style="background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>
                                 <a href="/history?user_id=${user.user_id}" class="user-action-btn info" onclick="event.stopPropagation();">View History</a>
                             </div>
                         </div>
@@ -545,6 +655,78 @@
                 closeAvatarUpload();
             }
         });
+
+        function updateSystemTime() {
+            const now = new Date();
+            const hours = now.getHours();
+            const minutes = now.getMinutes();
+            const seconds = now.getSeconds();
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours % 12 || 12;
+            const displayMinutes = minutes.toString().padStart(2, '0');
+            const displaySeconds = seconds.toString().padStart(2, '0');
+            
+            document.getElementById('systemTime').textContent = 
+                `${displayHours}:${displayMinutes}:${displaySeconds} ${ampm}`;
+        }
+
+        async function triggerDailyCashOut() {
+            const btn = document.getElementById('manualCashoutBtn');
+            const messageDiv = document.getElementById('systemMessage');
+            
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+            messageDiv.className = 'system-message';
+            messageDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/daily-cash-out', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    messageDiv.textContent = result.message || 'Daily cash out processed successfully!';
+                    messageDiv.className = 'system-message success';
+                    messageDiv.style.display = 'block';
+                    
+                    // Reload users to show updated balances
+                    await loadUsers();
+                    
+                    // Hide message after 10 seconds
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                    }, 10000);
+                } else {
+                    messageDiv.textContent = result.error || 'Error processing daily cash out';
+                    messageDiv.className = 'system-message error';
+                    messageDiv.style.display = 'block';
+                    
+                    // Hide message after 10 seconds
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                    }, 10000);
+                }
+            } catch (error) {
+                messageDiv.textContent = 'Network error. Please try again.';
+                messageDiv.className = 'system-message error';
+                messageDiv.style.display = 'block';
+                console.error('Error:', error);
+                
+                // Hide message after 10 seconds
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 10000);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Run Daily Cash Out';
+            }
+        }
+
+        // Update system time every second
+        updateSystemTime();
+        setInterval(updateSystemTime, 1000);
 
         // Load users when page loads
         loadUsers();
