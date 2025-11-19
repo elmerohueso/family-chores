@@ -12,4 +12,4 @@ jobs:
       - name: build image
         run: docker build . -t ghcr.io/elmerohueso/familychores:latest
       - name: push image
-        run: docker push hcr.io/elmerohueso/familychores:latest
+        run: docker push ghcr.io/elmerohueso/familychores:latest
