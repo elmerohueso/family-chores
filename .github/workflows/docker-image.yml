@@ -1,7 +1,17 @@
 name: Build and push Docker image
 
 on:
-  [workflow_dispatch]
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - ".github/**"
+      - ".gitignore"
+      - ".gitattributes"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "docker-compose-dev.yml"
+      - "README.md"
 
 jobs:
   build:
