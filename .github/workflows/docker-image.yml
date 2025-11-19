@@ -13,5 +13,5 @@ jobs:
         run: docker build . -t ghcr.io/elmerohueso/familychores:latest
       - name: push image
         run: |
-          docker login ghcr.io -u elmerohueso -p ${{secrets.CR_PAT}}
+          echo ${{secrets.CR_PAT}} | docker login ghcr.io -u elmerohueso --password-stdin
           docker push ghcr.io/elmerohueso/familychores:latest
