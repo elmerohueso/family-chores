@@ -181,7 +181,7 @@ def get_chores():
 
 @app.route('/api/chores/<int:chore_id>', methods=['DELETE'])
 def delete_chore(chore_id):
-    """Delete a chore and set chore_id to NULL in transactions to preserve history."""
+    """Delete a chore without affecting existing transactions."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -193,15 +193,7 @@ def delete_chore(chore_id):
             conn.close()
             return jsonify({'error': 'Chore not found'}), 404
         
-        # Set chore_id to NULL in all transactions that reference this chore
-        # This preserves transaction history while removing the chore reference
-        cursor.execute('''
-            UPDATE transactions 
-            SET chore_id = NULL 
-            WHERE chore_id = %s
-        ''', (chore_id,))
-        
-        # Delete the chore
+        # Delete the chore (transactions keep their original description)
         cursor.execute('DELETE FROM chores WHERE chore_id = %s', (chore_id,))
         
         conn.commit()
@@ -517,20 +509,18 @@ def get_transactions():
     """Get all transactions with user and chore names."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Join with users and chores to get names, include all transaction columns
+    # Join with users to get user name, description is now directly in transactions table
     cursor.execute('''
         SELECT 
             t.transaction_id,
             t.user_id,
-            t.chore_id,
+            t.description,
             t.value,
             t.transaction_type,
             t.timestamp,
-            u.full_name as user_name,
-            c.chore as chore_name
+            u.full_name as user_name
         FROM transactions t
         LEFT JOIN "user" u ON t.user_id = u.user_id
-        LEFT JOIN chores c ON t.chore_id = c.chore_id
         ORDER BY t.timestamp DESC
     ''')
     transactions = cursor.fetchall()
@@ -578,24 +568,60 @@ def create_transaction():
             conn.close()
             return jsonify({'error': f'Insufficient points. User has {current_balance} points.'}), 400
     
-    # Determine transaction type
+    # Determine transaction type and get description
     transaction_type = None
+    description = None
+    redemption_type = data.get('redemption_type')
+    
     if data.get('chore_id'):
         transaction_type = 'chore_completed'
-    elif data.get('redemption_type'):
+        # Get chore name from chores table
+        cursor.execute('SELECT chore FROM chores WHERE chore_id = %s', (data['chore_id'],))
+        chore_result = cursor.fetchone()
+        if chore_result:
+            description = chore_result['chore']
+        
+        # Update last_completed timestamp for the chore (in local system time)
+        completion_timestamp = data.get('timestamp') or get_system_timestamp()
+        cursor.execute('''
+            UPDATE chores 
+            SET last_completed = %s 
+            WHERE chore_id = %s
+        ''', (completion_timestamp, data['chore_id']))
+    elif data.get('chore_name'):
+        transaction_type = 'chore_completed'
+        description = data['chore_name']
+    elif data.get('description') and not redemption_type:
+        # Only use provided description if not a redemption (redemptions should generate their own)
+        transaction_type = 'chore_completed'
+        description = data['description']
+    elif redemption_type:
         transaction_type = 'points_redemption'
+        # Generate description for point redemption
+        points_redeemed = abs(value)
+        if redemption_type == 'money':
+            dollars = points_redeemed / 5.0
+            description = f'Redeemed {points_redeemed} points for ${dollars:.2f}'
+        elif redemption_type == 'media':
+            minutes = (points_redeemed / 5) * 30
+            description = f'Redeemed {points_redeemed} points for {int(minutes)} minutes of media/device time'
+        else:
+            description = f'Redeemed {points_redeemed} points'
     elif data.get('cash_withdrawal'):
         transaction_type = 'cash_withdrawal'
     elif value < 0:
-        transaction_type = 'points_redemption'  # Default for negative values without explicit type
+        # Default for negative values without explicit type or redemption_type
+        transaction_type = 'points_redemption'
+        points_redeemed = abs(value)
+        description = f'Redeemed {points_redeemed} points'
     
     # Insert transaction
     # Store timestamp in system timezone (local time)
     timestamp = data.get('timestamp') or get_system_timestamp()
     
     cursor.execute(
-        'INSERT INTO transactions (user_id, chore_id, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
-        (data['user_id'], data.get('chore_id'), value, transaction_type, timestamp)
+        'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
+        (data['user_id'], description, value, transaction_type, timestamp)
     )
     result = cursor.fetchone()
     transaction_id = result['transaction_id'] if result else None
@@ -607,7 +633,6 @@ def create_transaction():
     )
     
     # If redeeming for money (negative value and redemption_type is 'money'), update cash_balance
-    redemption_type = data.get('redemption_type')
     if value < 0 and redemption_type == 'money':
         # Calculate cash amount: every 5 points = $1
         cash_amount = abs(value) / 5.0
@@ -653,7 +678,10 @@ def get_settings():
     # Convert string values to appropriate types
     result = {
         'automatic_daily_cash_out': settings_dict.get('automatic_daily_cash_out', '1') == '1',
-        'max_rollover_points': int(settings_dict.get('max_rollover_points', '4'))
+        'max_rollover_points': int(settings_dict.get('max_rollover_points', '4')),
+        'daily_cooldown_hours': int(settings_dict.get('daily_cooldown_hours', '12')),
+        'weekly_cooldown_days': int(settings_dict.get('weekly_cooldown_days', '4')),
+        'monthly_cooldown_days': int(settings_dict.get('monthly_cooldown_days', '14'))
     }
     
     return jsonify(result)
@@ -690,6 +718,58 @@ def update_settings():
             cursor.close()
             conn.close()
             return jsonify({'error': 'Max rollover points must be a number'}), 400
+    
+    # Handle cooldown period settings
+    if 'daily_cooldown_hours' in data:
+        try:
+            daily_hours = int(data['daily_cooldown_hours'])
+            if daily_hours < 0:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Daily cooldown hours must be non-negative'}), 400
+            cursor.execute('''
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('daily_cooldown_hours', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (str(daily_hours),))
+        except (ValueError, TypeError):
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Daily cooldown hours must be a number'}), 400
+    
+    if 'weekly_cooldown_days' in data:
+        try:
+            weekly_days = int(data['weekly_cooldown_days'])
+            if weekly_days < 0:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Weekly cooldown days must be non-negative'}), 400
+            cursor.execute('''
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('weekly_cooldown_days', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (str(weekly_days),))
+        except (ValueError, TypeError):
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Weekly cooldown days must be a number'}), 400
+    
+    if 'monthly_cooldown_days' in data:
+        try:
+            monthly_days = int(data['monthly_cooldown_days'])
+            if monthly_days < 0:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Monthly cooldown days must be non-negative'}), 400
+            cursor.execute('''
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('monthly_cooldown_days', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (str(monthly_days),))
+        except (ValueError, TypeError):
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Monthly cooldown days must be a number'}), 400
     
     conn.commit()
     cursor.close()
@@ -808,7 +888,7 @@ def withdraw_cash():
     # Store amount as negative value in transactions table (for consistency with redemptions)
     # Store timestamp in system timezone
     cursor.execute('''
-        INSERT INTO transactions (user_id, chore_id, value, transaction_type, timestamp)
+        INSERT INTO transactions (user_id, description, value, transaction_type, timestamp)
         VALUES (%s, NULL, %s, 'cash_withdrawal', %s)
         RETURNING transaction_id
     ''', (data['user_id'], -amount, get_system_timestamp()))
@@ -889,10 +969,11 @@ def process_daily_cash_out():
                 
                 # Create transaction record for the conversion
                 # Store timestamp in system timezone
+                description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
                 cursor.execute('''
-                    INSERT INTO transactions (user_id, chore_id, value, transaction_type, timestamp)
-                    VALUES (%s, NULL, %s, 'points_redemption', %s)
-                ''', (user_id, -points_to_convert, get_system_timestamp()))
+                    INSERT INTO transactions (user_id, description, value, transaction_type, timestamp)
+                    VALUES (%s, %s, %s, 'points_redemption', %s)
+                ''', (user_id, description, -points_to_convert, get_system_timestamp()))
         else:
             # Just cap the balance at max_rollover if it exceeds it
             if balance > max_rollover:

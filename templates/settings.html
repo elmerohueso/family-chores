@@ -789,6 +789,32 @@
                         </div>
                     </div>
 
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <span class="setting-title">Chore Cooldown Periods</span>
+                        </div>
+                        <div class="setting-description">
+                            Specify how long chores should be on cooldown after being completed, based on their repeat interval. This prevents the same chore from being recorded too frequently.
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label for="dailyCooldownHours" style="min-width: 180px; color: #666;">Daily Cooldown:</label>
+                                <input type="number" id="dailyCooldownHours" class="number-input" min="0" required>
+                                <span style="color: #666;">hours</span>
+                            </div>
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label for="weeklyCooldownDays" style="min-width: 180px; color: #666;">Weekly Cooldown:</label>
+                                <input type="number" id="weeklyCooldownDays" class="number-input" min="0" required>
+                                <span style="color: #666;">days</span>
+                            </div>
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label for="monthlyCooldownDays" style="min-width: 180px; color: #666;">Monthly Cooldown:</label>
+                                <input type="number" id="monthlyCooldownDays" class="number-input" min="0" required>
+                                <span style="color: #666;">days</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="button-group">
                         <button type="submit" class="btn-primary">Save Settings</button>
                         <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
@@ -895,6 +921,9 @@
 
                 document.getElementById('automaticDailyCashOut').checked = settings.automatic_daily_cash_out;
                 document.getElementById('maxRolloverPoints').value = settings.max_rollover_points;
+                document.getElementById('dailyCooldownHours').value = settings.daily_cooldown_hours || 12;
+                document.getElementById('weeklyCooldownDays').value = settings.weekly_cooldown_days || 4;
+                document.getElementById('monthlyCooldownDays').value = settings.monthly_cooldown_days || 14;
 
                 const loadingDiv = document.getElementById('loading');
                 const settingsContainer = document.getElementById('settingsContainer');
@@ -912,11 +941,29 @@
 
             const data = {
                 automatic_daily_cash_out: document.getElementById('automaticDailyCashOut').checked,
-                max_rollover_points: parseInt(document.getElementById('maxRolloverPoints').value)
+                max_rollover_points: parseInt(document.getElementById('maxRolloverPoints').value),
+                daily_cooldown_hours: parseInt(document.getElementById('dailyCooldownHours').value),
+                weekly_cooldown_days: parseInt(document.getElementById('weeklyCooldownDays').value),
+                monthly_cooldown_days: parseInt(document.getElementById('monthlyCooldownDays').value)
             };
 
             if (data.max_rollover_points < 0) {
                 showMessage('Max rollover points must be non-negative', true);
+                return;
+            }
+
+            if (data.daily_cooldown_hours < 0) {
+                showMessage('Daily cooldown hours must be non-negative', true);
+                return;
+            }
+
+            if (data.weekly_cooldown_days < 0) {
+                showMessage('Weekly cooldown days must be non-negative', true);
+                return;
+            }
+
+            if (data.monthly_cooldown_days < 0) {
+                showMessage('Monthly cooldown days must be non-negative', true);
                 return;
             }
 
@@ -948,7 +995,7 @@
         function confirmDeleteChore(choreId, choreName) {
             pendingDeleteChoreId = choreId;
             document.getElementById('confirmTitle').textContent = 'Delete Chore';
-            document.getElementById('confirmMessage').textContent = `Are you sure you want to delete "${choreName}"? Any historical records referencing this chore will renamed to "Deleted chore". This action cannot be undone.`;
+            document.getElementById('confirmMessage').textContent = `Are you sure you want to delete "${choreName}"? This will remove the chore from the list. Existing chore history will not be affected. This action cannot be undone.`;
             document.getElementById('confirmationDialog').classList.add('show');
         }
 

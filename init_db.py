@@ -26,7 +26,8 @@ def init_database():
             chore_id SERIAL PRIMARY KEY,
             chore VARCHAR(255) NOT NULL,
             point_value INTEGER NOT NULL,
-            repeat VARCHAR(50)
+            repeat VARCHAR(50),
+            last_completed TIMESTAMP
         )
     ''')
     
@@ -53,17 +54,29 @@ def init_database():
         END $$;
     ''')
     
+    # Add last_completed column to chores table if it doesn't exist (for existing databases)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'chores' AND column_name = 'last_completed'
+            ) THEN
+                ALTER TABLE chores ADD COLUMN last_completed TIMESTAMP;
+            END IF;
+        END $$;
+    ''')
+    
     # Create transactions table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             transaction_id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL,
-            chore_id INTEGER,
+            description VARCHAR(255),
             value INTEGER NOT NULL,
             transaction_type VARCHAR(50),
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES "user"(user_id),
-            FOREIGN KEY (chore_id) REFERENCES chores(chore_id)
+            FOREIGN KEY (user_id) REFERENCES "user"(user_id)
         )
     ''')
     
@@ -76,6 +89,58 @@ def init_database():
                 WHERE table_name = 'transactions' AND column_name = 'transaction_type'
             ) THEN
                 ALTER TABLE transactions ADD COLUMN transaction_type VARCHAR(50);
+            END IF;
+        END $$;
+    ''')
+    
+    # Migration: Add description column (or rename chore_name to description) and migrate data from chores table
+    cursor.execute('''
+        DO $$
+        BEGIN
+            -- If chore_name exists but description doesn't, rename it
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'transactions' AND column_name = 'chore_name'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'transactions' AND column_name = 'description'
+            ) THEN
+                ALTER TABLE transactions RENAME COLUMN chore_name TO description;
+            ELSIF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'transactions' AND column_name = 'description'
+            ) THEN
+                -- Add description column if it doesn't exist
+                ALTER TABLE transactions ADD COLUMN description VARCHAR(255);
+                
+                -- Populate description from chores table for existing transactions
+                UPDATE transactions t
+                SET description = c.chore
+                FROM chores c
+                WHERE t.chore_id = c.chore_id AND t.chore_id IS NOT NULL;
+            END IF;
+        END $$;
+    ''')
+    
+    # Migration: Remove chore_id foreign key constraint and column
+    cursor.execute('''
+        DO $$
+        BEGIN
+            -- Drop foreign key constraint if it exists
+            IF EXISTS (
+                SELECT 1 FROM information_schema.table_constraints 
+                WHERE constraint_name = 'transactions_chore_id_fkey' 
+                AND table_name = 'transactions'
+            ) THEN
+                ALTER TABLE transactions DROP CONSTRAINT transactions_chore_id_fkey;
+            END IF;
+            
+            -- Drop chore_id column if it exists
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'transactions' AND column_name = 'chore_id'
+            ) THEN
+                ALTER TABLE transactions DROP COLUMN chore_id;
             END IF;
         END $$;
     ''')
@@ -106,6 +171,21 @@ def init_database():
     cursor.execute('''
         INSERT INTO settings (setting_key, setting_value) 
         VALUES ('max_rollover_points', '4')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('daily_cooldown_hours', '12')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('weekly_cooldown_days', '4')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('monthly_cooldown_days', '14')
         ON CONFLICT (setting_key) DO NOTHING
     ''')
     
