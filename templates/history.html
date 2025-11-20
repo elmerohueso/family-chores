@@ -449,16 +449,20 @@
                 // Cash withdrawal
                 const amount = Math.abs(transaction.value);
                 return `Cash withdrawal: $${amount.toFixed(2)}`;
-            } else if (transaction.value < 0 || transaction.transaction_type === 'points_redemption') {
-                // Points redemption
+            } else if (transaction.transaction_type === 'points_redemption') {
+                // Points redemption - use description from transaction if available, otherwise generate one
+                if (transaction.description) {
+                    return transaction.description;
+                }
+                // Fallback for legacy transactions without description
                 const points = Math.abs(transaction.value);
                 const dollars = (points / 5) * 1;
                 const minutes = (points / 5) * 30;
                 return `Redeemed ${points} points ($${dollars.toFixed(2)} or ${minutes} min)`;
             } else {
                 // Chore completion
-                // Chores without IDs are renamed to "Deleted chore"
-                return transaction.chore_name || 'Deleted chore';
+                // Use description from transaction, default to "Deleted chore" if null
+                return transaction.description || 'Deleted chore';
             }
         }
 
@@ -494,12 +498,12 @@
                 
                 // Apply search filter
                 const userName = (transaction.user_name || '').toLowerCase();
-                const choreName = (transaction.chore_name || '').toLowerCase();
+                const transactionDescription = (transaction.description || '').toLowerCase();
                 const type = getTransactionType(transaction);
                 const description = getTransactionDescription(transaction).toLowerCase();
                 
                 return userName.includes(searchTerm) || 
-                       choreName.includes(searchTerm) || 
+                       transactionDescription.includes(searchTerm) || 
                        type.includes(searchTerm) ||
                        description.includes(searchTerm);
             });

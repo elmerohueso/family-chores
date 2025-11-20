@@ -178,6 +178,17 @@
             display: none;
         }
 
+        .searchable-dropdown-item.disabled {
+            opacity: 0.4;
+            background-color: #f5f5f5;
+            cursor: not-allowed;
+            color: #999;
+        }
+
+        .searchable-dropdown-item.disabled:hover {
+            background-color: #f5f5f5;
+        }
+
         .help-text {
             font-size: 12px;
             color: #999;
@@ -520,6 +531,46 @@
         }
 
         let selectedChore = null;
+        let cooldownSettings = {
+            daily_cooldown_hours: 12,
+            weekly_cooldown_days: 4,
+            monthly_cooldown_days: 14
+        };
+
+        async function loadCooldownSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                const settings = await response.json();
+                cooldownSettings = {
+                    daily_cooldown_hours: settings.daily_cooldown_hours || 12,
+                    weekly_cooldown_days: settings.weekly_cooldown_days || 4,
+                    monthly_cooldown_days: settings.monthly_cooldown_days || 14
+                };
+            } catch (error) {
+                console.error('Error loading cooldown settings:', error);
+                // Use defaults if settings can't be loaded
+            }
+        }
+
+        function isChoreOnCooldown(chore) {
+            if (!chore.last_completed || !chore.repeat) return false;
+            
+            const lastCompleted = new Date(chore.last_completed);
+            const now = new Date();
+            const hoursDiff = (now - lastCompleted) / (1000 * 60 * 60);
+            
+            const repeatLower = chore.repeat.toLowerCase();
+            
+            if (repeatLower === 'daily') {
+                return hoursDiff < cooldownSettings.daily_cooldown_hours;
+            } else if (repeatLower === 'weekly') {
+                return hoursDiff < (cooldownSettings.weekly_cooldown_days * 24);
+            } else if (repeatLower === 'monthly') {
+                return hoursDiff < (cooldownSettings.monthly_cooldown_days * 24);
+            }
+            
+            return false; // No cooldown for other repeat types
+        }
 
         async function loadChores() {
             try {
@@ -538,16 +589,24 @@
             
             chores.forEach(chore => {
                 const item = document.createElement('div');
-                item.className = 'searchable-dropdown-item';
+                const onCooldown = isChoreOnCooldown(chore);
+                item.className = onCooldown ? 'searchable-dropdown-item disabled' : 'searchable-dropdown-item';
                 item.dataset.choreId = chore.chore_id;
                 item.dataset.pointValue = chore.point_value;
-                item.textContent = `${chore.chore} (${chore.point_value} points)`;
-                item.addEventListener('click', () => selectChore(chore));
+                item.textContent = `${chore.chore} (${chore.point_value} points)${onCooldown ? ' - On Cooldown' : ''}`;
+                if (!onCooldown) {
+                    item.addEventListener('click', () => selectChore(chore));
+                }
                 dropdown.appendChild(item);
             });
         }
 
         function selectChore(chore) {
+            // Prevent selecting chores on cooldown
+            if (isChoreOnCooldown(chore)) {
+                return;
+            }
+            
             selectedChore = chore;
             document.getElementById('chore_search').value = `${chore.chore} (${chore.point_value} points)`;
             document.getElementById('chore_id').value = chore.chore_id;
@@ -660,6 +719,13 @@
                 return;
             }
 
+            // Check if selected chore is on cooldown
+            const selectedChoreObj = chores.find(c => c.chore_id == data.chore_id);
+            if (selectedChoreObj && isChoreOnCooldown(selectedChoreObj)) {
+                showMessage('This chore is on cooldown and cannot be recorded yet.', true);
+                return;
+            }
+
             if (!data.value || data.value < 1) {
                 showMessage('Point value must be a positive number', true);
                 return;
@@ -697,7 +763,9 @@
 
         // Load data when page loads
         loadUsers();
-        loadChores();
+        loadCooldownSettings().then(() => {
+            loadChores();
+        });
 
         // Check role on page load - redirect kids
         window.addEventListener('DOMContentLoaded', async () => {
