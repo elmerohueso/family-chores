@@ -14,7 +14,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '0.9.2'
+__version__ = '0.9.3'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -178,6 +178,42 @@ def get_chores():
     cursor.close()
     conn.close()
     return jsonify([dict(chore) for chore in chores])
+
+@app.route('/api/chores/<int:chore_id>', methods=['DELETE'])
+def delete_chore(chore_id):
+    """Delete a chore and set chore_id to NULL in transactions to preserve history."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # First, check if chore exists
+        cursor.execute('SELECT chore_id FROM chores WHERE chore_id = %s', (chore_id,))
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Chore not found'}), 404
+        
+        # Set chore_id to NULL in all transactions that reference this chore
+        # This preserves transaction history while removing the chore reference
+        cursor.execute('''
+            UPDATE transactions 
+            SET chore_id = NULL 
+            WHERE chore_id = %s
+        ''', (chore_id,))
+        
+        # Delete the chore
+        cursor.execute('DELETE FROM chores WHERE chore_id = %s', (chore_id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'message': 'Chore deleted successfully'}), 200
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        return jsonify({'error': f'Error deleting chore: {str(e)}'}), 500
 
 @app.route('/api/chores/<int:chore_id>', methods=['PUT'])
 def update_chore(chore_id):

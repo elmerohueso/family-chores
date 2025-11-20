@@ -457,7 +457,8 @@
                 return `Redeemed ${points} points ($${dollars.toFixed(2)} or ${minutes} min)`;
             } else {
                 // Chore completion
-                return transaction.chore_name || 'Custom chore';
+                // Chores without IDs are renamed to "Deleted chore"
+                return transaction.chore_name || 'Deleted chore';
             }
         }
 
