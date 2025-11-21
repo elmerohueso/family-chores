@@ -20,7 +20,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '0.9.7'
+__version__ = '0.9.8'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -92,22 +92,45 @@ def get_db_connection():
     return conn
 
 def get_client_ip():
-    """Get client IP address from request, handling proxies."""
-    if has_request_context():
-        try:
-            # Check for forwarded IP first (handles reverse proxies)
-            if request.headers.get('X-Forwarded-For'):
-                # X-Forwarded-For can contain multiple IPs, get the first one
-                ip = request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    """Get client IP address from request, handling proxies and direct connections.
+    
+    Returns the actual browser client IP address accessing the web app.
+    - If behind a proxy, checks X-Forwarded-For header (leftmost IP is original client)
+    - If X-Real-IP is set by a trusted proxy, uses that
+    - Falls back to request.remote_addr for direct connections
+    """
+    if not has_request_context():
+        return 'system'  # No request context (e.g., background threads)
+    
+    try:
+        # X-Forwarded-For: Format is "client, proxy1, proxy2"
+        # The leftmost (first) IP is the original client IP
+        x_forwarded_for = request.headers.get('X-Forwarded-For')
+        if x_forwarded_for:
+            # Take the first IP (original client)
+            ip = x_forwarded_for.split(',')[0].strip()
+            if ip:
                 return ip
-            elif request.headers.get('X-Real-IP'):
-                return request.headers.get('X-Real-IP')
-            else:
-                # Fall back to remote_addr
-                return request.remote_addr if request.remote_addr else 'system'
+        
+        # X-Real-IP: Set by trusted proxy (e.g., nginx)
+        x_real_ip = request.headers.get('X-Real-IP')
+        if x_real_ip:
+            ip = x_real_ip.strip()
+            if ip:
+                return ip
+        
+        # Fall back to remote_addr for direct connections (no proxy)
+        # This will be the browser's IP when connecting directly
+        if request.remote_addr:
+            return request.remote_addr
+        
+        return 'unknown'
+    except Exception:
+        # If anything fails, try to get remote_addr as fallback
+        try:
+            return request.remote_addr if request.remote_addr else 'unknown'
         except Exception:
-            return 'system'
-    return 'system'  # No request context (e.g., background threads)
+            return 'unknown'
 
 def log_system_event(log_type, message, details=None, status='success', ip_address=None):
     """Log a system event to the system_log table.

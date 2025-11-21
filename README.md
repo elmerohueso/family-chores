@@ -15,7 +15,7 @@ A web application for managing family chores, points, and rewards using Python a
 - **Automatic Daily Cash Out**: Configurable automatic conversion of points to cash at midnight
 - **Chore Cooldown Periods**: Prevent chores from being completed too frequently (daily, weekly, monthly)
 - **Email Notifications**: Receive email alerts for chore completions, point redemptions, and cash withdrawals
-- **System Logging**: Comprehensive audit log of all system events with IP address tracking
+- **System Logging**: Comprehensive audit log of all system events
 - **Login/Logout Tracking**: Monitor user authentication events and failed login attempts
 - **Settings Management**: Configure system settings, manage chores list, and reset data
 - **CSV Import**: Bulk import chores from CSV files
@@ -59,7 +59,6 @@ A web application for managing family chores, points, and rewards using Python a
 - Tracks user actions (chores, users, transactions, settings)
 - Records login/logout events and failed login attempts
 - Logs email sends, errors, and cash out operations
-- Includes source IP addresses for all actions
 - Searchable, filterable, and sortable log viewer
 - Tracks both manual and automatic operations
 
