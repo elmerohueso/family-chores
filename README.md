@@ -4,15 +4,21 @@ A web application for managing family chores, points, and rewards using Python a
 
 ## Features
 
-- **User Management**: Add family members with customizable avatars
-- **Chore Tracking**: Create and manage chores with point values
+- **User Management**: Add and delete family members with customizable avatars
+- **Chore Tracking**: Create, edit, and delete chores with point values and repeat intervals
 - **Point System**: Track points earned from completed chores
-- **Rewards**: Redeem points for media time or cash
-- **Cash Management**: Track cash balances and withdrawals
-- **Transaction History**: View complete history of chores, redemptions, and withdrawals
+- **Rewards**: Redeem points for media time or cash (5 points = 30 minutes OR $1)
+- **Cash Management**: Track cash balances, withdrawals, and automatic conversions
+- **Transaction History**: View complete history of chores, redemptions, and withdrawals with filtering
 - **Role-Based Access**: Separate Kid and Parent interfaces with PIN protection
+- **Kid Permissions**: Granular control over what kids can do (record chores, redeem points, withdraw cash, view history)
 - **Automatic Daily Cash Out**: Configurable automatic conversion of points to cash at midnight
-- **Settings Management**: Configure system settings and manage chores list
+- **Chore Cooldown Periods**: Prevent chores from being completed too frequently (daily, weekly, monthly)
+- **Email Notifications**: Receive email alerts for chore completions, point redemptions, and cash withdrawals
+- **System Logging**: Comprehensive audit log of all system events with IP address tracking
+- **Login/Logout Tracking**: Monitor user authentication events and failed login attempts
+- **Settings Management**: Configure system settings, manage chores list, and reset data
+- **CSV Import**: Bulk import chores from CSV files
 
 #### CSV Import
 - Import multiple chores at once via CSV file
@@ -35,15 +41,40 @@ A web application for managing family chores, points, and rewards using Python a
 - Maximum file size: 5MB
 - Avatars are stored persistently in Docker volume
 
+#### Chore Cooldown Periods
+- **Daily chores**: Cannot be completed again within configured hours (default: 12 hours)
+- **Weekly chores**: Cannot be completed again within configured days (default: 4 days)
+- **Monthly chores**: Cannot be completed again within configured days (default: 14 days)
+- Chores on cooldown are visually indicated and cannot be selected
+
+#### Email Notifications
+- Configure SMTP settings for email alerts
+- Receive notifications for chore completions, point redemptions, and cash withdrawals
+- Support for multiple parent email addresses
+- Encrypted password storage for SMTP authentication
+- Test email functionality to verify configuration
+
+#### System Logging
+- Comprehensive audit log of all system events
+- Tracks user actions (chores, users, transactions, settings)
+- Records login/logout events and failed login attempts
+- Logs email sends, errors, and cash out operations
+- Includes source IP addresses for all actions
+- Searchable, filterable, and sortable log viewer
+- Tracks both manual and automatic operations
+
 ## User Roles
-To prevent kids from tampering with settings or dishonestly marking chores as completed, kids have "read-only" access.
+Parents have full control over what kids can access through granular permission settings.
 
 ### Kid Role
 - Can view the home page (user list)
 - Can view chores list
-- Can view transaction history
-- Cannot add users, chores, or record transactions
-- Cannot access settings or redeem points
+- Can view transaction history (if enabled by parent)
+- Can record chores (if enabled by parent)
+- Can redeem points (if enabled by parent)
+- Can withdraw cash (if enabled by parent)
+- Cannot add users, chores, or access settings
+- Cannot delete users or chores
 
 ### Parent Role
 - Full access to all features
