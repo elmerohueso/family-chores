@@ -254,12 +254,39 @@ def init_database():
         ON CONFLICT (setting_key) DO NOTHING
     ''')
     
+    # Create system_log table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS system_log (
+            log_id SERIAL PRIMARY KEY,
+            timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            log_type VARCHAR(50) NOT NULL,
+            message TEXT NOT NULL,
+            details TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'success'
+        )
+    ''')
+    
+    # Create index on timestamp for faster queries
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_system_log_timestamp ON system_log(timestamp DESC)
+    ''')
+    
+    # Create index on log_type for filtering
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_system_log_type ON system_log(log_type)
+    ''')
+    
+    # Create index on status for filtering
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_system_log_status ON system_log(status)
+    ''')
+    
     # Commit changes and close connection
     conn.commit()
     conn.close()
     
     print(f"Database initialized successfully!")
-    print("Tables created: chores, user, transactions, cash_balances, settings")
+    print("Tables created: chores, user, transactions, cash_balances, settings, system_log")
 
 if __name__ == '__main__':
     init_database()

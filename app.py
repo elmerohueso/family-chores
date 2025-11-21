@@ -4,7 +4,7 @@ from psycopg2.extras import RealDictCursor
 import os
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 import threading
 import time as time_module
@@ -20,7 +20,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '0.9.6'
+__version__ = '0.9.7'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -90,6 +90,41 @@ def get_db_connection():
     """Get a database connection with dictionary cursor."""
     conn = psycopg2.connect(DATABASE_URL)
     return conn
+
+def log_system_event(log_type, message, details=None, status='success'):
+    """Log a system event to the system_log table.
+    
+    Args:
+        log_type: Type of event (e.g., 'settings_saved', 'email_sent', 'cash_out_run', 'error')
+        message: Brief message describing the event
+        details: Optional detailed information (JSON string or dict)
+        status: 'success' or 'error'
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Convert details to string if it's a dict
+        if details and isinstance(details, dict):
+            import json
+            details = json.dumps(details)
+        elif details is None:
+            details = ''
+        
+        # Store timestamp in system timezone
+        timestamp = get_system_timestamp()
+        
+        cursor.execute('''
+            INSERT INTO system_log (timestamp, log_type, message, details, status)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (timestamp, log_type, message, details, status))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        # Silently fail to avoid breaking main functionality
+        print(f"Error logging system event: {e}")
 
 def get_system_timestamp():
     """Get current timestamp in system timezone as ISO format string."""
@@ -1193,6 +1228,12 @@ def update_settings():
     cursor.close()
     conn.close()
     
+    # Log settings save
+    try:
+        log_system_event('settings_saved', 'Settings updated successfully', {'changes': list(data.keys())}, 'success')
+    except Exception:
+        pass  # Don't fail if logging fails
+    
     return jsonify({'message': 'Settings updated successfully'}), 200
 
 @app.route('/api/daily-cash-out', methods=['POST'])
@@ -1563,10 +1604,47 @@ def process_daily_cash_out():
     conn.close()
     print(f"Daily cash out processed at {datetime.now()}")
 
+def get_last_daily_cash_out_date():
+    """Get the last date when daily cash out was processed from database."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', ('last_daily_cash_out_date',))
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if result and result.get('setting_value'):
+            return datetime.strptime(result['setting_value'], '%Y-%m-%d').date()
+        return None
+    except Exception as e:
+        print(f"Error getting last daily cash out date: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def set_last_daily_cash_out_date(date):
+    """Store the last date when daily cash out was processed in database."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        date_str = date.strftime('%Y-%m-%d')
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('last_daily_cash_out_date', %s)
+            ON CONFLICT (setting_key) 
+            DO UPDATE SET setting_value = %s
+        ''', (date_str, date_str))
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error setting last daily cash out date: {e}")
+        import traceback
+        traceback.print_exc()
+
 def daily_cash_out_worker():
     """Background worker that checks for midnight and processes daily cash out."""
-    last_processed_date = None
-    
     print("Daily cash out worker thread started")
     
     while True:
@@ -1574,13 +1652,41 @@ def daily_cash_out_worker():
             now = datetime.now()
             current_date = now.date()
             
-            # Check if it's midnight (00:00 to 00:04) and we haven't processed today
-            if now.hour == 0 and now.minute < 5:
+            # Get last processed date from database (persisted across restarts)
+            last_processed_date = get_last_daily_cash_out_date()
+            
+            # Determine if we need to process
+            should_process = False
+            process_date = current_date
+            reason = ""
+            
+            # Check if we need to process today
+            # Process if:
+            # 1. It's between 00:00 and 01:00 (wider window for reliability)
+            # 2. We haven't processed today yet
+            if now.hour == 0:
                 if last_processed_date != current_date:
-                    print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')}")
+                    should_process = True
+                    reason = f"Regular midnight processing for {current_date}"
+            # Recovery check: If it's early morning (1:00-1:05) and we missed yesterday, process it
+            elif now.hour == 1 and now.minute < 5:
+                yesterday = current_date - timedelta(days=1)
+                if last_processed_date != current_date and last_processed_date != yesterday:
+                    should_process = True
+                    process_date = yesterday
+                    reason = f"Recovery processing for {yesterday} (missed yesterday)"
+            
+            if should_process:
+                print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')}: {reason}")
+                try:
                     process_daily_cash_out()
-                    last_processed_date = current_date
-                    print(f"Daily cash out completed for {current_date}")
+                    # Store the date we just processed
+                    set_last_daily_cash_out_date(process_date)
+                    print(f"Daily cash out completed for {process_date}")
+                except Exception as e:
+                    print(f"Error during daily cash out processing: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # Sleep for 1 minute
             time_module.sleep(60)
