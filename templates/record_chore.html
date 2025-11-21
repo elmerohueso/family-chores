@@ -767,14 +767,35 @@
             loadChores();
         });
 
-        // Check role on page load - redirect kids
+        // Check role and permissions on page load
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 const response = await fetch('/api/get-role');
                 const result = await response.json();
                 const role = result.role;
                 
-                if (role !== 'parent') {
+                // Parents always have access
+                if (role === 'parent') {
+                    return;
+                }
+                
+                // Kids need permission check
+                if (role === 'kid') {
+                    try {
+                        const settingsResponse = await fetch('/api/settings');
+                        const settings = await settingsResponse.json();
+                        
+                        if (!settings.kid_allowed_record_chore) {
+                            window.location.href = '/';
+                            return;
+                        }
+                    } catch (error) {
+                        console.error('Error loading settings:', error);
+                        window.location.href = '/';
+                        return;
+                    }
+                } else {
+                    // No role set - redirect to home
                     window.location.href = '/';
                 }
             } catch (error) {

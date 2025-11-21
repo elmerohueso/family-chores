@@ -14,7 +14,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '0.9.4'
+__version__ = '0.9.5'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -78,6 +78,39 @@ def kid_or_parent_required(f):
             return redirect(url_for('index'))
         return f(*args, **kwargs)
     return decorated_function
+
+def kid_permission_required(permission_key):
+    """Decorator factory to check kid permission settings.
+    Usage: @kid_permission_required('kid_allowed_record_chore')
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            user_role = session.get('user_role')
+            
+            # Parents always have access
+            if user_role == 'parent':
+                return f(*args, **kwargs)
+            
+            # Kids need permission check
+            if user_role == 'kid':
+                conn = get_db_connection()
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (permission_key,))
+                result = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                
+                if result and result['setting_value'] == '1':
+                    return f(*args, **kwargs)
+                else:
+                    # Permission not allowed - redirect to index
+                    return redirect(url_for('index'))
+            
+            # No role set - redirect to index
+            return redirect(url_for('index'))
+        return decorated_function
+    return decorator
 
 @app.route('/')
 def index():
@@ -150,19 +183,19 @@ def chores_page():
     return render_template('chores.html')
 
 @app.route('/record-chore')
-@parent_required
+@kid_permission_required('kid_allowed_record_chore')
 def record_chore_page():
     """Page to record a completed chore."""
     return render_template('record_chore.html')
 
 @app.route('/redeem-points')
-@parent_required
+@kid_permission_required('kid_allowed_redeem_points')
 def redeem_points_page():
     """Page to redeem points for rewards."""
     return render_template('redeem_points.html')
 
 @app.route('/withdraw-cash')
-@parent_required
+@kid_permission_required('kid_allowed_withdraw_cash')
 def withdraw_cash_page():
     """Page to withdraw cash from user's cash balance."""
     return render_template('withdraw_cash.html')
@@ -503,6 +536,46 @@ def create_user():
     conn.close()
     return jsonify({'user_id': user_id, 'message': 'User created successfully'}), 201
 
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@parent_required
+def delete_user(user_id):
+    """Delete a user and all associated data."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # Check if user exists
+    cursor.execute('SELECT avatar_path FROM "user" WHERE user_id = %s', (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Delete avatar file if exists
+    if user.get('avatar_path'):
+        avatar_path = os.path.join(AVATAR_DIR, os.path.basename(user['avatar_path']))
+        if os.path.exists(avatar_path):
+            try:
+                os.remove(avatar_path)
+            except:
+                pass  # Ignore errors deleting file
+    
+    # Delete related data (cascading deletes should handle this, but being explicit)
+    # Note: Transactions are kept for historical purposes - they reference user_id
+    # which will become orphaned. The user record is deleted but transactions remain.
+    # If you want to delete transactions too, uncomment the line below:
+    # cursor.execute('DELETE FROM transactions WHERE user_id = %s', (user_id,))
+    cursor.execute('DELETE FROM cash_balances WHERE user_id = %s', (user_id,))
+    
+    # Delete user
+    cursor.execute('DELETE FROM "user" WHERE user_id = %s', (user_id,))
+    
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return jsonify({'message': 'User deleted successfully'}), 200
+
 # Transactions endpoints
 @app.route('/api/transactions', methods=['GET'])
 def get_transactions():
@@ -529,7 +602,7 @@ def get_transactions():
     return jsonify([dict(transaction) for transaction in transactions])
 
 @app.route('/history')
-@kid_or_parent_required
+@kid_permission_required('kid_allowed_view_history')
 def history_page():
     """Page to view transaction history."""
     return render_template('history.html')
@@ -681,7 +754,11 @@ def get_settings():
         'max_rollover_points': int(settings_dict.get('max_rollover_points', '4')),
         'daily_cooldown_hours': int(settings_dict.get('daily_cooldown_hours', '12')),
         'weekly_cooldown_days': int(settings_dict.get('weekly_cooldown_days', '4')),
-        'monthly_cooldown_days': int(settings_dict.get('monthly_cooldown_days', '14'))
+        'monthly_cooldown_days': int(settings_dict.get('monthly_cooldown_days', '14')),
+        'kid_allowed_record_chore': settings_dict.get('kid_allowed_record_chore', '0') == '1',
+        'kid_allowed_redeem_points': settings_dict.get('kid_allowed_redeem_points', '0') == '1',
+        'kid_allowed_withdraw_cash': settings_dict.get('kid_allowed_withdraw_cash', '0') == '1',
+        'kid_allowed_view_history': settings_dict.get('kid_allowed_view_history', '0') == '1'
     }
     
     return jsonify(result)
@@ -770,6 +847,39 @@ def update_settings():
             cursor.close()
             conn.close()
             return jsonify({'error': 'Monthly cooldown days must be a number'}), 400
+    
+    # Handle kid permission settings
+    if 'kid_allowed_record_chore' in data:
+        value = '1' if data['kid_allowed_record_chore'] else '0'
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('kid_allowed_record_chore', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
+    
+    if 'kid_allowed_redeem_points' in data:
+        value = '1' if data['kid_allowed_redeem_points'] else '0'
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('kid_allowed_redeem_points', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
+    
+    if 'kid_allowed_withdraw_cash' in data:
+        value = '1' if data['kid_allowed_withdraw_cash'] else '0'
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('kid_allowed_withdraw_cash', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
+    
+    if 'kid_allowed_view_history' in data:
+        value = '1' if data['kid_allowed_view_history'] else '0'
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('kid_allowed_view_history', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
     
     conn.commit()
     cursor.close()

@@ -815,6 +815,45 @@
                         </div>
                     </div>
 
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <span class="setting-title">Kid Permissions</span>
+                        </div>
+                        <div class="setting-description">
+                            Control which actions kids are allowed to perform in the system.
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <div class="setting-label" style="margin-bottom: 16px;">
+                                <span class="setting-title" style="font-size: 16px;">Record a Chore</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="kidAllowedRecordChore">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-label" style="margin-bottom: 16px;">
+                                <span class="setting-title" style="font-size: 16px;">Redeem Points</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="kidAllowedRedeemPoints">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-label" style="margin-bottom: 16px;">
+                                <span class="setting-title" style="font-size: 16px;">Withdraw Cash</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="kidAllowedWithdrawCash">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-label" style="margin-bottom: 16px;">
+                                <span class="setting-title" style="font-size: 16px;">View History</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="kidAllowedViewHistory">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="button-group">
                         <button type="submit" class="btn-primary">Save Settings</button>
                         <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
@@ -865,6 +904,52 @@
                                 <div id="choresEmptyState" class="chores-empty-state" style="display: none;">
                                     <div class="chores-empty-state-icon">📋</div>
                                     <div class="chores-empty-state-text">No chores found.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chores-section">
+                    <div class="chores-section-header">
+                        <div class="chores-section-title" onclick="toggleUsersSection()">
+                            <span class="chores-toggle-icon" id="usersToggleIcon">▶</span>
+                            <span>User Management</span>
+                        </div>
+                        <a href="/add-user" class="btn-add-chore">Add User</a>
+                    </div>
+                    <div class="chores-section-content" id="usersSectionContent">
+                        <div id="usersLoading" class="loading" style="display: none;">Loading users...</div>
+                        <div id="usersContainer" style="display: none;">
+                            <div class="search-bar">
+                                <span class="search-icon">🔍</span>
+                                <input type="text" id="usersSearchInput" class="search-input" placeholder="Search users...">
+                            </div>
+                            <div class="chores-table-container">
+                                <table id="usersTable">
+                                    <thead>
+                                        <tr>
+                                            <th onclick="sortUsersTable('full_name')">
+                                                Name
+                                                <span class="sort-indicator" id="sort-full_name-users"></span>
+                                            </th>
+                                            <th onclick="sortUsersTable('balance')">
+                                                Points Balance
+                                                <span class="sort-indicator" id="sort-balance-users"></span>
+                                            </th>
+                                            <th onclick="sortUsersTable('cash_balance')">
+                                                Cash Balance
+                                                <span class="sort-indicator" id="sort-cash_balance-users"></span>
+                                            </th>
+                                            <th style="width: 60px; text-align: center;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="usersTableBody">
+                                    </tbody>
+                                </table>
+                                <div id="usersEmptyState" class="chores-empty-state" style="display: none;">
+                                    <div class="chores-empty-state-icon">👤</div>
+                                    <div class="chores-empty-state-text">No users found.</div>
                                 </div>
                             </div>
                         </div>
@@ -924,6 +1009,10 @@
                 document.getElementById('dailyCooldownHours').value = settings.daily_cooldown_hours || 12;
                 document.getElementById('weeklyCooldownDays').value = settings.weekly_cooldown_days || 4;
                 document.getElementById('monthlyCooldownDays').value = settings.monthly_cooldown_days || 14;
+                document.getElementById('kidAllowedRecordChore').checked = settings.kid_allowed_record_chore || false;
+                document.getElementById('kidAllowedRedeemPoints').checked = settings.kid_allowed_redeem_points || false;
+                document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
+                document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
 
                 const loadingDiv = document.getElementById('loading');
                 const settingsContainer = document.getElementById('settingsContainer');
@@ -944,7 +1033,11 @@
                 max_rollover_points: parseInt(document.getElementById('maxRolloverPoints').value),
                 daily_cooldown_hours: parseInt(document.getElementById('dailyCooldownHours').value),
                 weekly_cooldown_days: parseInt(document.getElementById('weeklyCooldownDays').value),
-                monthly_cooldown_days: parseInt(document.getElementById('monthlyCooldownDays').value)
+                monthly_cooldown_days: parseInt(document.getElementById('monthlyCooldownDays').value),
+                kid_allowed_record_chore: document.getElementById('kidAllowedRecordChore').checked,
+                kid_allowed_redeem_points: document.getElementById('kidAllowedRedeemPoints').checked,
+                kid_allowed_withdraw_cash: document.getElementById('kidAllowedWithdrawCash').checked,
+                kid_allowed_view_history: document.getElementById('kidAllowedViewHistory').checked
             };
 
             if (data.max_rollover_points < 0) {
@@ -991,11 +1084,19 @@
 
         let pendingResetType = null;
         let pendingDeleteChoreId = null;
+        let pendingDeleteUserId = null;
 
         function confirmDeleteChore(choreId, choreName) {
             pendingDeleteChoreId = choreId;
             document.getElementById('confirmTitle').textContent = 'Delete Chore';
             document.getElementById('confirmMessage').textContent = `Are you sure you want to delete "${choreName}"? This will remove the chore from the list. Existing chore history will not be affected. This action cannot be undone.`;
+            document.getElementById('confirmationDialog').classList.add('show');
+        }
+
+        function confirmDeleteUser(userId, userName) {
+            pendingDeleteUserId = userId;
+            document.getElementById('confirmTitle').textContent = 'Delete User';
+            document.getElementById('confirmMessage').textContent = `Are you sure you want to delete "${userName}"? This will remove the user and their historical data. This action cannot be undone.`;
             document.getElementById('confirmationDialog').classList.add('show');
         }
 
@@ -1024,9 +1125,36 @@
             document.getElementById('confirmationDialog').classList.remove('show');
             pendingResetType = null;
             pendingDeleteChoreId = null;
+            pendingDeleteUserId = null;
         }
 
         async function executeReset() {
+            // Handle user deletion
+            if (pendingDeleteUserId !== null) {
+                const userId = pendingDeleteUserId;
+                closeConfirmation();
+
+                try {
+                    const response = await fetch(`/api/users/${userId}`, {
+                        method: 'DELETE'
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        showMessage('User deleted successfully!');
+                        // Reload users to update the list
+                        await loadUsers();
+                    } else {
+                        showMessage(result.error || 'Error deleting user', true);
+                    }
+                } catch (error) {
+                    showMessage('Network error. Please try again.', true);
+                    console.error('Error:', error);
+                }
+                return;
+            }
+
             // Handle chore deletion
             if (pendingDeleteChoreId !== null) {
                 const choreId = pendingDeleteChoreId;
@@ -1393,6 +1521,165 @@
         // Search functionality for chores
         document.getElementById('choresSearchInput').addEventListener('input', () => {
             applyChoresFiltersAndSort();
+        });
+
+        // User management functionality
+        let allUsers = [];
+        let filteredUsers = [];
+        let usersSortColumn = null;
+        let usersSortDirection = 'asc';
+
+        function updateUsersSortIndicator(column) {
+            // Clear all indicators
+            document.querySelectorAll('#usersTable .sort-indicator').forEach(ind => ind.textContent = '');
+            
+            if (usersSortColumn === column) {
+                const indicator = document.getElementById(`sort-${column}-users`);
+                if (indicator) {
+                    indicator.textContent = usersSortDirection === 'asc' ? '▲' : '▼';
+                }
+            }
+        }
+
+        function sortUsersTable(column) {
+            if (usersSortColumn === column) {
+                usersSortDirection = usersSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                usersSortColumn = column;
+                usersSortDirection = 'asc';
+            }
+            
+            updateUsersSortIndicator(column);
+            applyUsersFiltersAndSort();
+        }
+
+        function applyUsersFiltersAndSort() {
+            const searchTerm = document.getElementById('usersSearchInput').value.toLowerCase();
+            
+            filteredUsers = allUsers.filter(user => {
+                const userName = (user.full_name || '').toLowerCase();
+                return userName.includes(searchTerm);
+            });
+
+            // Sort
+            if (usersSortColumn) {
+                filteredUsers.sort((a, b) => {
+                    let aVal = a[usersSortColumn];
+                    let bVal = b[usersSortColumn];
+                    
+                    // Handle null/undefined values
+                    if (aVal == null) aVal = '';
+                    if (bVal == null) bVal = '';
+                    
+                    // Handle numeric sorting for balance and cash_balance
+                    if (usersSortColumn === 'balance' || usersSortColumn === 'cash_balance') {
+                        aVal = Number(aVal) || 0;
+                        bVal = Number(bVal) || 0;
+                    } else {
+                        aVal = String(aVal).toLowerCase();
+                        bVal = String(bVal).toLowerCase();
+                    }
+                    
+                    if (aVal < bVal) return usersSortDirection === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return usersSortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            renderUsersTable();
+        }
+
+        function renderUsersTable() {
+            const tableBody = document.getElementById('usersTableBody');
+            const emptyState = document.getElementById('usersEmptyState');
+            const table = document.getElementById('usersTable');
+
+            if (filteredUsers.length === 0) {
+                table.style.display = 'none';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            table.style.display = 'table';
+            emptyState.style.display = 'none';
+
+            tableBody.innerHTML = filteredUsers.map(user => {
+                let avatarUrl = null;
+                if (user.avatar_path) {
+                    const filename = user.avatar_path.includes('/') ? user.avatar_path.split('/').pop() : user.avatar_path;
+                    avatarUrl = `/avatars/${filename}`;
+                }
+                
+                return `
+                    <tr data-user-id="${user.user_id}">
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                ${avatarUrl 
+                                    ? `<img src="${avatarUrl}" alt="${escapeHtml(user.full_name)}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">`
+                                    : `<span style="font-size: 24px;">👤</span>`
+                                }
+                                <span class="chore-name">${escapeHtml(user.full_name)}</span>
+                            </div>
+                        </td>
+                        <td class="point-value">${user.balance || 0}</td>
+                        <td style="color: #4caf50; font-weight: 600;">$${(user.cash_balance || 0).toFixed(2)}</td>
+                        <td style="text-align: center;">
+                            <button class="btn-delete" onclick="event.stopPropagation(); confirmDeleteUser(${user.user_id}, '${escapeHtml(user.full_name).replace(/'/g, "\\'")}')" title="Delete user">✕</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function loadUsers() {
+            try {
+                const usersLoading = document.getElementById('usersLoading');
+                const usersContainer = document.getElementById('usersContainer');
+                
+                usersLoading.style.display = 'block';
+                usersContainer.style.display = 'none';
+
+                const response = await fetch('/api/users');
+                allUsers = await response.json();
+
+                usersLoading.style.display = 'none';
+                usersContainer.style.display = 'block';
+
+                if (allUsers.length === 0) {
+                    filteredUsers = [];
+                    renderUsersTable();
+                    return;
+                }
+
+                applyUsersFiltersAndSort();
+
+            } catch (error) {
+                console.error('Error loading users:', error);
+                document.getElementById('usersLoading').textContent = 'Error loading users. Please try again.';
+            }
+        }
+
+        // Toggle users section
+        function toggleUsersSection() {
+            const content = document.getElementById('usersSectionContent');
+            const icon = document.getElementById('usersToggleIcon');
+            
+            if (content.classList.contains('expanded')) {
+                content.classList.remove('expanded');
+                icon.classList.remove('expanded');
+            } else {
+                content.classList.add('expanded');
+                icon.classList.add('expanded');
+                // Load users if not already loaded
+                if (allUsers.length === 0) {
+                    loadUsers();
+                }
+            }
+        }
+
+        // Search functionality for users
+        document.getElementById('usersSearchInput').addEventListener('input', () => {
+            applyUsersFiltersAndSort();
         });
 
         // Load settings when page loads

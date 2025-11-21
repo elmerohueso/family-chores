@@ -250,6 +250,96 @@
             border-color: #667eea;
             background: #f8f9ff;
         }
+
+        .confirmation-popup {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .confirmation-popup.show {
+            display: flex;
+        }
+
+        .confirmation-content {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        .confirmation-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .confirmation-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+        }
+
+        .confirmation-message {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+
+        .confirmation-details {
+            background: #f8f9ff;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 30px;
+        }
+
+        .confirmation-detail-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .confirmation-detail-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .confirmation-detail-label {
+            color: #666;
+        }
+
+        .confirmation-detail-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .confirmation-button {
+            padding: 12px 32px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .confirmation-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
         .app-footer {
             position: fixed;
             bottom: 15px;
@@ -323,11 +413,11 @@
                     </div>
                     <div class="amount-quick-select">
                         <button type="button" class="quick-select-btn" onclick="setAmount(1)">$1</button>
+                        <button type="button" class="quick-select-btn" onclick="setAmount(2)">$2</button>
+                        <button type="button" class="quick-select-btn" onclick="setAmount(3)">$3</button>
+                        <button type="button" class="quick-select-btn" onclick="setAmount(4)">$4</button>
                         <button type="button" class="quick-select-btn" onclick="setAmount(5)">$5</button>
                         <button type="button" class="quick-select-btn" onclick="setAmount(10)">$10</button>
-                        <button type="button" class="quick-select-btn" onclick="setAmount(20)">$20</button>
-                        <button type="button" class="quick-select-btn" onclick="setAmount(50)">$50</button>
-                        <button type="button" class="quick-select-btn" onclick="setAmount(100)">$100</button>
                     </div>
                     <div class="help-text">Amount must be a whole dollar (no cents)</div>
                 </div>
@@ -345,6 +435,16 @@
             </form>
         </div>
 
+    </div>
+
+    <div id="confirmationPopup" class="confirmation-popup">
+        <div class="confirmation-content">
+            <div class="confirmation-icon">💵</div>
+            <div class="confirmation-title">Cash Withdrawn!</div>
+            <div class="confirmation-message" id="confirmationMessage"></div>
+            <div class="confirmation-details" id="confirmationDetails"></div>
+            <button class="confirmation-button" onclick="closeConfirmation()">Got it!</button>
+        </div>
     </div>
 
     <script>
@@ -525,10 +625,11 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    showMessage(`Successfully withdrew $${amount.toFixed(2)}! New balance: $${result.new_balance.toFixed(2)}`);
-                    resetForm();
-                    // Reload users to get updated balances
+                    // Reload users to get updated balances before showing confirmation
                     await loadUsers();
+                    const updatedUser = users.find(u => u.user_id == userId);
+                    showConfirmation(updatedUser || user, amount, result.new_balance);
+                    resetForm();
                 } else {
                     showMessage(result.error || 'Error withdrawing cash', true);
                 }
@@ -538,17 +639,70 @@
             }
         });
 
+        function showConfirmation(user, amount, newBalance) {
+            const popup = document.getElementById('confirmationPopup');
+            const messageDiv = document.getElementById('confirmationMessage');
+            const detailsDiv = document.getElementById('confirmationDetails');
+            
+            messageDiv.textContent = `${user.full_name} successfully withdrew $${amount.toFixed(2)}!`;
+            
+            detailsDiv.innerHTML = `
+                <div class="confirmation-detail-item">
+                    <span class="confirmation-detail-label">Amount Withdrawn:</span>
+                    <span class="confirmation-detail-value">$${amount.toFixed(2)}</span>
+                </div>
+                <div class="confirmation-detail-item">
+                    <span class="confirmation-detail-label">New Cash Balance:</span>
+                    <span class="confirmation-detail-value">$${newBalance.toFixed(2)}</span>
+                </div>
+            `;
+            
+            popup.classList.add('show');
+        }
+
+        function closeConfirmation() {
+            document.getElementById('confirmationPopup').classList.remove('show');
+        }
+
+        // Close popup when clicking outside
+        document.getElementById('confirmationPopup').addEventListener('click', (e) => {
+            if (e.target.id === 'confirmationPopup') {
+                closeConfirmation();
+            }
+        });
+
         // Load users when page loads
         loadUsers();
 
-        // Check role on page load - redirect kids
+        // Check role and permissions on page load
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 const response = await fetch('/api/get-role');
                 const result = await response.json();
                 const role = result.role;
                 
-                if (role !== 'parent') {
+                // Parents always have access
+                if (role === 'parent') {
+                    return;
+                }
+                
+                // Kids need permission check
+                if (role === 'kid') {
+                    try {
+                        const settingsResponse = await fetch('/api/settings');
+                        const settings = await settingsResponse.json();
+                        
+                        if (!settings.kid_allowed_withdraw_cash) {
+                            window.location.href = '/';
+                            return;
+                        }
+                    } catch (error) {
+                        console.error('Error loading settings:', error);
+                        window.location.href = '/';
+                        return;
+                    }
+                } else {
+                    // No role set - redirect to home
                     window.location.href = '/';
                 }
             } catch (error) {

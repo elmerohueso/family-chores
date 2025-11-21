@@ -595,6 +595,25 @@
             pointer-events: none;
             cursor: not-allowed;
         }
+
+        .btn-add-user {
+            display: inline-block;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 0 8px;
+        }
+
+        .btn-add-user:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
     </style>
 </head>
 <body>
@@ -621,13 +640,11 @@
                 <div id="usersGrid" class="users-grid"></div>
                 <div id="emptyState" class="empty-state" style="display: none;">
                     <div class="empty-state-icon">👤</div>
-                    <div class="empty-state-text">No users found. Add your first family member!</div>
-                    <a href="/add-user" class="btn-add-user">Add User</a>
+                    <div class="empty-state-text">No users found. Add your first family member from Settings!</div>
                 </div>
             </div>
             <div style="text-align: center; width: 100%; margin-top: 20px;">
                 <a href="/chores" class="btn-add-user">Chore List</a>
-                <a href="/add-user" class="btn-add-user" id="addUserBtn" style="display: none;">Add User</a>
             </div>
         </div>
 
@@ -677,6 +694,12 @@
         let currentUserId = null;
         let selectedAvatarFile = null;
         let userRole = null;
+        let kidPermissions = {
+            record_chore: false,
+            redeem_points: false,
+            withdraw_cash: false,
+            view_history: false
+        };
 
         // Check for existing role selection
         function getRole() {
@@ -762,6 +785,8 @@
 
                 if (response.ok) {
                     setRole(role);
+                    // Reload permissions in case settings changed
+                    await loadKidPermissions();
                     document.getElementById('roleSelectionOverlay').classList.add('hidden');
                     applyRoleRestrictions();
                     // Load users after role is set to apply restrictions
@@ -799,22 +824,12 @@
 
         function applyRoleRestrictions() {
             const role = getRole();
-            const addUserBtn = document.getElementById('addUserBtn');
-            const emptyStateAddBtn = document.querySelector('#emptyState .btn-add-user');
             
             if (role === 'kid') {
                 // Hide settings link
                 const settingsLink = document.getElementById('settingsLink');
                 if (settingsLink) {
                     settingsLink.style.display = 'none';
-                }
-                
-                // Hide "Add User" button
-                if (addUserBtn) {
-                    addUserBtn.style.display = 'none';
-                }
-                if (emptyStateAddBtn) {
-                    emptyStateAddBtn.style.display = 'none';
                 }
                 
                 // Disable avatar uploads
@@ -835,14 +850,6 @@
                     settingsLink.style.display = '';
                 }
                 
-                // Show "Add User" button
-                if (addUserBtn) {
-                    addUserBtn.style.display = 'inline-block';
-                }
-                if (emptyStateAddBtn) {
-                    emptyStateAddBtn.style.display = 'inline-block';
-                }
-                
                 document.querySelectorAll('.user-avatar, .user-icon').forEach(el => {
                     el.style.pointerEvents = '';
                     el.style.opacity = '';
@@ -851,8 +858,27 @@
             }
         }
 
+        async function loadKidPermissions() {
+            try {
+                const response = await fetch('/api/settings');
+                const settings = await response.json();
+                kidPermissions = {
+                    record_chore: settings.kid_allowed_record_chore || false,
+                    redeem_points: settings.kid_allowed_redeem_points || false,
+                    withdraw_cash: settings.kid_allowed_withdraw_cash || false,
+                    view_history: settings.kid_allowed_view_history || false
+                };
+            } catch (error) {
+                console.error('Error loading kid permissions:', error);
+                // Keep defaults if error occurs
+            }
+        }
+
         // Show role selection on page load if not already selected
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
+            // Load kid permissions first
+            await loadKidPermissions();
+            
             const role = getRole();
             if (!role) {
                 // Show role selection modal - wait for user to select
@@ -924,8 +950,12 @@
                                     <a href="/record-chore?user_id=${user.user_id}" class="user-action-btn primary" onclick="event.stopPropagation();">Record a Chore</a>
                                     <a href="/redeem-points?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();">Redeem Points</a>
                                     <a href="/withdraw-cash?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();" style="background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>
-                                ` : ''}
-                                <a href="/history?user_id=${user.user_id}" class="user-action-btn info" onclick="event.stopPropagation();">View History</a>
+                                ` : `
+                                    ${kidPermissions.record_chore ? `<a href="/record-chore?user_id=${user.user_id}" class="user-action-btn primary" onclick="event.stopPropagation();">Record a Chore</a>` : ''}
+                                    ${kidPermissions.redeem_points ? `<a href="/redeem-points?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();">Redeem Points</a>` : ''}
+                                    ${kidPermissions.withdraw_cash ? `<a href="/withdraw-cash?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();" style="background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>` : ''}
+                                `}
+                                ${(getRole() !== 'kid' || kidPermissions.view_history) ? `<a href="/history?user_id=${user.user_id}" class="user-action-btn info" onclick="event.stopPropagation();">View History</a>` : ''}
                             </div>
                         </div>
                     `;
