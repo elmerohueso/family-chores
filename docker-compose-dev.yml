@@ -30,6 +30,7 @@ services:
       - avatar_data:/data/avatars
     environment:
       - FLASK_ENV=development
+      - SECRET_KEY=dev-secret-key-change-in-production
       - POSTGRES_HOST=familychores-db
       - POSTGRES_DATABASE=family_chores
       - POSTGRES_USER=family_chores

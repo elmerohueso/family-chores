@@ -71,6 +71,7 @@ The application will be available at `http://localhost:8000` (or at the specifie
 The application will be available at `http://localhost:8000` (or at the specified port)
 
 #### Environment Variables
+- `SECRET_KEY` - Flask secret key (default: `dev-secret-key-change-in-production`)
 - `POSTGRES_HOST` - PostgreSQL hostname (default: `familychores-db`)
 - `POSTGRES_DATABASE` - Database name (default: `family_chores`)
 - `POSTGRES_USER` - Database user (default: `family_chores`)

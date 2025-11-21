@@ -208,6 +208,51 @@ def init_database():
         VALUES ('kid_allowed_view_history', '0')
         ON CONFLICT (setting_key) DO NOTHING
     ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_smtp_server', '')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_smtp_port', '587')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_username', '')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_password', '')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_sender_name', 'Family Chores')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_notify_chore_completed', '0')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_notify_points_redeemed', '0')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_notify_cash_withdrawn', '0')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('parent_email_addresses', '')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
     
     # Commit changes and close connection
     conn.commit()

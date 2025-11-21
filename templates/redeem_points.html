@@ -218,8 +218,15 @@
         }
 
         .btn-primary:disabled {
-            opacity: 0.5;
+            opacity: 0.6;
             cursor: not-allowed;
+            background: #cccccc;
+            filter: grayscale(100%);
+        }
+
+        button:disabled:hover {
+            transform: none;
+            box-shadow: none;
         }
 
         .message {
@@ -661,33 +668,41 @@
         document.getElementById('redeemForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+
             const formData = new FormData(e.target);
             const points = parseInt(formData.get('points'));
             const userId = parseInt(formData.get('user_id'));
 
             if (!userId) {
                 showMessage('Please select a user', true);
+                submitBtn.disabled = false;
                 return;
             }
 
             if (!points || points < 5 || points % 5 !== 0) {
                 showMessage('Points must be a positive multiple of 5', true);
+                submitBtn.disabled = false;
                 return;
             }
 
             const user = users.find(u => u.user_id == userId);
             if (!user) {
                 showMessage('User not found', true);
+                submitBtn.disabled = false;
                 return;
             }
 
             if (points > (user.balance || 0)) {
                 showMessage('Insufficient points. User only has ' + (user.balance || 0) + ' points.', true);
+                submitBtn.disabled = false;
                 return;
             }
 
             if (!selectedRedemptionType) {
                 showMessage('Please select a redemption type', true);
+                submitBtn.disabled = false;
                 return;
             }
 
@@ -728,10 +743,12 @@
                     await loadUsers();
                 } else {
                     showMessage(result.error || 'Error redeeming points', true);
+                    submitBtn.disabled = false;
                 }
             } catch (error) {
                 showMessage('Network error. Please try again.', true);
                 console.error('Error:', error);
+                submitBtn.disabled = false;
             }
         });
 
@@ -767,6 +784,7 @@
 
         function closeConfirmation() {
             document.getElementById('confirmationPopup').classList.remove('show');
+            window.location.reload();
         }
 
         // Close popup when clicking outside

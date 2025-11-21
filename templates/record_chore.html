@@ -254,6 +254,18 @@
             color: #333;
         }
 
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            background: #cccccc;
+            filter: grayscale(100%);
+        }
+
+        button:disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
         .message {
             padding: 12px 16px;
             border-radius: 8px;
@@ -276,49 +288,94 @@
             display: block;
         }
 
-        .toast {
+        .confirmation-popup {
             position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-            padding: 20px 24px;
-            min-width: 300px;
-            max-width: 400px;
-            z-index: 10000;
-            display: flex;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
             align-items: center;
-            gap: 16px;
-            transform: translateX(400px);
-            opacity: 0;
-            transition: all 0.3s ease-out;
+            justify-content: center;
+            z-index: 10000;
         }
 
-        .toast.show {
-            transform: translateX(0);
-            opacity: 1;
+        .confirmation-popup.show {
+            display: flex;
         }
 
-        .toast-icon {
-            font-size: 32px;
-            flex-shrink: 0;
+        .confirmation-content {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
         }
 
-        .toast-content {
-            flex: 1;
+        .confirmation-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
         }
 
-        .toast-title {
+        .confirmation-title {
+            font-size: 24px;
             font-weight: 600;
             color: #333;
-            margin-bottom: 4px;
-            font-size: 16px;
+            margin-bottom: 12px;
         }
 
-        .toast-message {
+        .confirmation-message {
+            font-size: 16px;
             color: #666;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+
+        .confirmation-details {
+            background: #f8f9ff;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 30px;
+        }
+
+        .confirmation-detail-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
             font-size: 14px;
+        }
+
+        .confirmation-detail-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .confirmation-detail-label {
+            color: #666;
+        }
+
+        .confirmation-detail-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .confirmation-button {
+            padding: 12px 32px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .confirmation-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
 
         .loading {
@@ -401,13 +458,6 @@
 
         <div class="card">
             <div id="message" class="message"></div>
-            <div id="toast" class="toast">
-                <div class="toast-icon">✅</div>
-                <div class="toast-content">
-                    <div class="toast-title" id="toastTitle">Success!</div>
-                    <div class="toast-message" id="toastMessage"></div>
-                </div>
-            </div>
             <div id="loading" class="loading" style="display: none;">Loading...</div>
 
             <form id="recordChoreForm" novalidate>
@@ -446,7 +496,7 @@
                 </div>
 
                 <div class="button-group">
-                    <button type="submit" class="btn-primary">Record Chore</button>
+                    <button type="submit" class="btn-primary" id="submitBtn">Record Chore</button>
                     <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
                 </div>
             </form>
@@ -470,16 +520,35 @@
             }, 5000);
         }
 
-        function showToast(title, message) {
-            const toast = document.getElementById('toast');
-            document.getElementById('toastTitle').textContent = title;
-            document.getElementById('toastMessage').textContent = message;
+        function showConfirmation(user, chore, points) {
+            const popup = document.getElementById('confirmationPopup');
+            const messageDiv = document.getElementById('confirmationMessage');
+            const detailsDiv = document.getElementById('confirmationDetails');
             
-            toast.classList.add('show');
+            messageDiv.textContent = `${user.full_name} successfully completed "${chore.chore}"!`;
             
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 4000);
+            const newBalance = (user.balance || 0) + points;
+            detailsDiv.innerHTML = `
+                <div class="confirmation-detail-item">
+                    <span class="confirmation-detail-label">Chore:</span>
+                    <span class="confirmation-detail-value">${chore.chore}</span>
+                </div>
+                <div class="confirmation-detail-item">
+                    <span class="confirmation-detail-label">Points Earned:</span>
+                    <span class="confirmation-detail-value">${points}</span>
+                </div>
+                <div class="confirmation-detail-item">
+                    <span class="confirmation-detail-label">New Balance:</span>
+                    <span class="confirmation-detail-value">${newBalance} points</span>
+                </div>
+            `;
+            
+            popup.classList.add('show');
+        }
+
+        function closeConfirmation() {
+            document.getElementById('confirmationPopup').classList.remove('show');
+            window.location.reload();
         }
 
         function resetForm() {
@@ -702,6 +771,9 @@
         document.getElementById('recordChoreForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+
             const formData = new FormData(e.target);
             const data = {
                 user_id: parseInt(formData.get('user_id')),
@@ -711,11 +783,13 @@
 
             if (!data.user_id) {
                 showMessage('Please select a user', true);
+                submitBtn.disabled = false;
                 return;
             }
 
             if (!data.chore_id) {
                 showMessage('Please select a chore', true);
+                submitBtn.disabled = false;
                 return;
             }
 
@@ -723,11 +797,13 @@
             const selectedChoreObj = chores.find(c => c.chore_id == data.chore_id);
             if (selectedChoreObj && isChoreOnCooldown(selectedChoreObj)) {
                 showMessage('This chore is on cooldown and cannot be recorded yet.', true);
+                submitBtn.disabled = false;
                 return;
             }
 
             if (!data.value || data.value < 1) {
                 showMessage('Point value must be a positive number', true);
+                submitBtn.disabled = false;
                 return;
             }
 
@@ -745,19 +821,21 @@
                 if (response.ok) {
                     const user = users.find(u => u.user_id == data.user_id);
                     const chore = chores.find(c => c.chore_id == data.chore_id);
-                    const userName = user ? user.full_name : 'User';
-                    const choreName = chore ? chore.chore : 'Chore';
                     
-                    showToast(`"${choreName}" recorded for ${userName}`, `${data.value} points awarded!`);
+                    if (user && chore) {
+                        showConfirmation(user, chore, data.value);
+                    }
                     resetForm();
                     // Reload users to get updated balances
                     await loadUsers();
                 } else {
                     showMessage(result.error || 'Error recording chore', true);
+                    submitBtn.disabled = false;
                 }
             } catch (error) {
                 showMessage('Network error. Please try again.', true);
                 console.error('Error:', error);
+                submitBtn.disabled = false;
             }
         });
 
@@ -833,7 +911,25 @@
 
         // Load footer on page load
         loadAppFooter();
+
+        // Close popup when clicking outside
+        document.getElementById('confirmationPopup').addEventListener('click', (e) => {
+            if (e.target.id === 'confirmationPopup') {
+                closeConfirmation();
+            }
+        });
     </script>
+
+    <!-- Confirmation Popup -->
+    <div id="confirmationPopup" class="confirmation-popup">
+        <div class="confirmation-content">
+            <div class="confirmation-icon">✅</div>
+            <div class="confirmation-title">Chore Recorded!</div>
+            <div class="confirmation-message" id="confirmationMessage"></div>
+            <div class="confirmation-details" id="confirmationDetails"></div>
+            <button class="confirmation-button" onclick="closeConfirmation()">Got it!</button>
+        </div>
+    </div>
 
     <!-- App Footer -->
     <div class="app-footer">

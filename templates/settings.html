@@ -92,9 +92,19 @@
             font-weight: 600;
             color: #333;
         }
+        .setting-subtitle {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }     
+
+        .setting-name {
+            font-size: 16px;
+            color: #666;
+        }
 
         .setting-description {
-            font-size: 14px;
+            font-size: 16px;
             color: #666;
             margin-bottom: 16px;
             line-height: 1.5;
@@ -684,7 +694,8 @@
         }
 
         .system-message {
-            margin: 15px 0 0 0;
+            width: 30%;
+            margin: 15px 0 0 auto;
             padding: 12px 16px;
             border-radius: 8px;
             font-size: 14px;
@@ -787,6 +798,10 @@
                             <input type="number" id="maxRolloverPoints" class="number-input" min="0" required>
                             <span style="color: #666;">points</span>
                         </div>
+                        <div style="text-align: right;">
+                            <button class="btn-manual-cashout" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run One-Time Cash Out</button>
+                            <div id="systemMessage" class="system-message"></div>
+                        </div>
                     </div>
 
                     <div class="setting-item">
@@ -798,17 +813,17 @@
                         </div>
                         <div style="margin-top: 16px;">
                             <div class="input-group" style="margin-bottom: 12px;">
-                                <label for="dailyCooldownHours" style="min-width: 180px; color: #666;">Daily Cooldown:</label>
+                                <label for="dailyCooldownHours" style="min-width: 180px;" class="setting-name">Daily Cooldown:</label>
                                 <input type="number" id="dailyCooldownHours" class="number-input" min="0" required>
                                 <span style="color: #666;">hours</span>
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
-                                <label for="weeklyCooldownDays" style="min-width: 180px; color: #666;">Weekly Cooldown:</label>
+                                <label for="weeklyCooldownDays" style="min-width: 180px;" class="setting-name">Weekly Cooldown:</label>
                                 <input type="number" id="weeklyCooldownDays" class="number-input" min="0" required>
                                 <span style="color: #666;">days</span>
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
-                                <label for="monthlyCooldownDays" style="min-width: 180px; color: #666;">Monthly Cooldown:</label>
+                                <label for="monthlyCooldownDays" style="min-width: 180px;" class="setting-name">Monthly Cooldown:</label>
                                 <input type="number" id="monthlyCooldownDays" class="number-input" min="0" required>
                                 <span style="color: #666;">days</span>
                             </div>
@@ -819,33 +834,33 @@
                         <div class="setting-label">
                             <span class="setting-title">Kid Permissions</span>
                         </div>
-                        <div class="setting-description">
-                            Control which actions kids are allowed to perform in the system.
+                        <div class="setting-subtitle">
+                            Kid's can:
                         </div>
                         <div style="margin-top: 16px;">
                             <div class="setting-label" style="margin-bottom: 16px;">
-                                <span class="setting-title" style="font-size: 16px;">Record a Chore</span>
+                                <span class="setting-name">Record a Chore</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="kidAllowedRecordChore">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
                             <div class="setting-label" style="margin-bottom: 16px;">
-                                <span class="setting-title" style="font-size: 16px;">Redeem Points</span>
+                                <span class="setting-name" >Redeem Points</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="kidAllowedRedeemPoints">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
                             <div class="setting-label" style="margin-bottom: 16px;">
-                                <span class="setting-title" style="font-size: 16px;">Withdraw Cash</span>
+                                <span class="setting-name">Withdraw Cash</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="kidAllowedWithdrawCash">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
                             <div class="setting-label" style="margin-bottom: 16px;">
-                                <span class="setting-title" style="font-size: 16px;">View History</span>
+                                <span class="setting-name">View History</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="kidAllowedViewHistory">
                                     <span class="toggle-slider"></span>
@@ -854,14 +869,76 @@
                         </div>
                     </div>
 
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <span class="setting-title">Email Notifications</span>
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label for="emailSmtpServer" style="min-width: 150px;" class="setting-name">SMTP Server:</label>
+                                <input type="text" id="emailSmtpServer" class="number-input" style="width: 300px;" placeholder="smtp.gmail.com">
+                            </div>
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label for="emailSmtpPort" style="min-width: 150px;" class="setting-name">SMTP Port:</label>
+                                <input type="number" id="emailSmtpPort" class="number-input" min="1" max="65535" placeholder="587">
+                                <span style="color: #666;">(usually 587 for TLS or 465 for SSL)</span>
+                            </div>
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label for="emailUsername" style="min-width: 150px;" class="setting-name">Username:</label>
+                                <input type="text" id="emailUsername" class="number-input" style="width: 300px;" placeholder="your.email@example.com">
+                            </div>
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label for="emailPassword" style="min-width: 150px;" class="setting-name">Password:</label>
+                                <input type="password" id="emailPassword" class="number-input" style="width: 300px;" placeholder="Leave empty to keep existing">
+                            </div>
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label for="emailSenderName" style="min-width: 150px;" class="setting-name">Sender Name:</label>
+                                <input type="text" id="emailSenderName" class="number-input" style="width: 300px;" placeholder="Family Chores">
+                            </div>
+                            <div style="margin-top: 16px;">
+                                <div class="input-group" style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+                                    <label for="parentEmailAddresses" style="min-width: 150px;" class="setting-name">Parent Address(es):</label>
+                                    <input type="text" id="parentEmailAddresses" class="number-input" style="width: 300px;" placeholder="email1@example.com, email2@example.com">
+                                </div>
+                                <div style="text-align: right; margin-bottom: 12px;">
+                                    <button type="button" class="btn-manual-cashout" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
+                                    <div id="emailTestMessage" class="system-message"></div>
+                                </div>
+                                
+                            </div>
+                            <div class="setting-subtitle">
+                                Notify when:
+                            </div>
+                                <div class="setting-label" style="margin-bottom: 16px;">
+                                    <span class="setting-name" style="font-size: 16px;">A chore is completed</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="emailNotifyChoreCompleted">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-label" style="margin-bottom: 16px;">
+                                    <span class="setting-name" style="font-size: 16px;">Points are redeemed</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="emailNotifyPointsRedeemed">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-label" style="margin-bottom: 16px;">
+                                    <span class="setting-name" style="font-size: 16px;">Cash is withdrawn</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="emailNotifyCashWithdrawn">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                    
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="button-group">
                         <button type="submit" class="btn-primary">Save Settings</button>
                         <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
                     </div>
-                    <div style="text-align: center;">
-                        <button class="btn-manual-cashout" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run One-Time Cash Out</button>
-                        <div id="systemMessage" class="system-message"></div>
-                    </div>
+                    
                 </form>
 
                 <div class="chores-section">
@@ -1013,6 +1090,17 @@
                 document.getElementById('kidAllowedRedeemPoints').checked = settings.kid_allowed_redeem_points || false;
                 document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
                 document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
+                
+                // Email settings
+                document.getElementById('emailSmtpServer').value = settings.email_smtp_server || '';
+                document.getElementById('emailSmtpPort').value = settings.email_smtp_port || '587';
+                document.getElementById('emailUsername').value = settings.email_username || '';
+                document.getElementById('emailPassword').value = ''; // Don't populate password field
+                document.getElementById('emailSenderName').value = settings.email_sender_name || 'Family Chores';
+                document.getElementById('emailNotifyChoreCompleted').checked = settings.email_notify_chore_completed || false;
+                document.getElementById('emailNotifyPointsRedeemed').checked = settings.email_notify_points_redeemed || false;
+                document.getElementById('emailNotifyCashWithdrawn').checked = settings.email_notify_cash_withdrawn || false;
+                document.getElementById('parentEmailAddresses').value = settings.parent_email_addresses || '';
 
                 const loadingDiv = document.getElementById('loading');
                 const settingsContainer = document.getElementById('settingsContainer');
@@ -1037,7 +1125,16 @@
                 kid_allowed_record_chore: document.getElementById('kidAllowedRecordChore').checked,
                 kid_allowed_redeem_points: document.getElementById('kidAllowedRedeemPoints').checked,
                 kid_allowed_withdraw_cash: document.getElementById('kidAllowedWithdrawCash').checked,
-                kid_allowed_view_history: document.getElementById('kidAllowedViewHistory').checked
+                kid_allowed_view_history: document.getElementById('kidAllowedViewHistory').checked,
+                email_smtp_server: document.getElementById('emailSmtpServer').value.trim(),
+                email_smtp_port: document.getElementById('emailSmtpPort').value.trim(),
+                email_username: document.getElementById('emailUsername').value.trim(),
+                email_password: document.getElementById('emailPassword').value.trim(), // Only update if provided
+                email_sender_name: document.getElementById('emailSenderName').value.trim(),
+                email_notify_chore_completed: document.getElementById('emailNotifyChoreCompleted').checked,
+                email_notify_points_redeemed: document.getElementById('emailNotifyPointsRedeemed').checked,
+                email_notify_cash_withdrawn: document.getElementById('emailNotifyCashWithdrawn').checked,
+                parent_email_addresses: document.getElementById('parentEmailAddresses').value.trim()
             };
 
             if (data.max_rollover_points < 0) {
@@ -1732,7 +1829,7 @@
                 }, 10000);
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Run Daily Cash Out';
+                btn.textContent = 'Run One-Time Cash Out';
             }
         }
 
@@ -1781,6 +1878,68 @@
 
         // Load footer on page load
         loadAppFooter();
+
+        // Send test email
+        async function sendTestEmail() {
+            const btn = document.getElementById('testEmailBtn');
+            const messageDiv = document.getElementById('emailTestMessage');
+            const parentEmails = document.getElementById('parentEmailAddresses').value.trim();
+            
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            messageDiv.className = 'system-message';
+            messageDiv.style.display = 'none';
+
+            // Parse comma-separated emails
+            const emailList = parentEmails ? parentEmails.split(',').map(e => e.trim()).filter(e => e) : [];
+
+            try {
+                const response = await fetch('/api/send-test-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        parent_email_addresses: emailList.length > 0 ? emailList : null
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    messageDiv.textContent = result.message || `Test email sent successfully to ${emailList.length || 'all configured'} address(es)!`;
+                    messageDiv.className = 'system-message success';
+                    messageDiv.style.display = 'block';
+                    
+                    // Hide message after 10 seconds
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                    }, 10000);
+                } else {
+                    messageDiv.textContent = result.error || 'Error sending test email';
+                    messageDiv.className = 'system-message error';
+                    messageDiv.style.display = 'block';
+                    
+                    // Hide message after 10 seconds
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                    }, 10000);
+                }
+            } catch (error) {
+                messageDiv.textContent = 'Network error. Please try again.';
+                messageDiv.className = 'system-message error';
+                messageDiv.style.display = 'block';
+                console.error('Error:', error);
+                
+                // Hide message after 10 seconds
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 10000);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Test Email';
+            }
+        }
     </script>
 
     <!-- App Footer -->

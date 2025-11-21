@@ -9,6 +9,12 @@ import uuid
 import threading
 import time as time_module
 from functools import wraps
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
+from cryptography.fernet import Fernet
+import base64
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -34,6 +40,44 @@ os.makedirs(AVATAR_DIR, exist_ok=True)
 
 # Parent PIN from environment variable
 PARENT_PIN = os.environ.get('PARENT_PIN', '1234')
+
+# Email password encryption key (derived from app secret key)
+def get_encryption_key():
+    """Get or generate encryption key for email password."""
+    secret_key = app.secret_key.encode('utf-8')
+    # Derive a 32-byte key from the secret key using SHA256
+    from hashlib import sha256
+    key = sha256(secret_key).digest()
+    # Convert to base64 for Fernet
+    return base64.urlsafe_b64encode(key)
+
+# Initialize Fernet with encryption key
+try:
+    encryption_key = get_encryption_key()
+    fernet = Fernet(encryption_key)
+except Exception as e:
+    # Fallback to a default key if there's an error (not secure but better than crashing)
+    encryption_key = Fernet.generate_key()
+    fernet = Fernet(encryption_key)
+
+def encrypt_password(password):
+    """Encrypt a password for storage."""
+    if not password:
+        return ''
+    try:
+        return fernet.encrypt(password.encode('utf-8')).decode('utf-8')
+    except Exception:
+        return ''
+
+def decrypt_password(encrypted_password):
+    """Decrypt a password from storage."""
+    if not encrypted_password:
+        return ''
+    try:
+        return fernet.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
+    except Exception:
+        # If decryption fails, return empty string (might be unencrypted legacy data)
+        return ''
 
 # Allowed avatar file extensions
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
@@ -607,6 +651,167 @@ def history_page():
     """Page to view transaction history."""
     return render_template('history.html')
 
+def get_email_notification_setting(setting_key):
+    """Get email notification setting from database."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (setting_key,))
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if result:
+        return result.get('setting_value') == '1'
+    return False
+
+def send_notification_email(notification_type, user_name, description, value=None, user_id=None):
+    """Send email notification based on transaction type.
+    
+    Args:
+        notification_type: 'chore_completed', 'points_redeemed', or 'cash_withdrawn'
+        user_name: Name of the user who performed the action
+        description: Description of the transaction
+        value: Optional value (points or cash amount)
+        user_id: Optional user ID to fetch current balances
+    """
+    # Check if notification is enabled for this type
+    setting_key = f'email_notify_{notification_type}'
+    if not get_email_notification_setting(setting_key):
+        return
+    
+    # Get parent email addresses to send notification to
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s)', ('parent_email_addresses', 'email_username'))
+    results = cursor.fetchall()
+    
+    # Get user's current balances if user_id is provided
+    point_balance = None
+    cash_balance = None
+    if user_id:
+        cursor.execute('SELECT balance FROM "user" WHERE user_id = %s', (user_id,))
+        user_result = cursor.fetchone()
+        if user_result:
+            point_balance = user_result.get('balance') or 0
+        
+        cursor.execute('SELECT cash_balance FROM cash_balances WHERE user_id = %s', (user_id,))
+        cash_result = cursor.fetchone()
+        if cash_result:
+            cash_balance = cash_result.get('cash_balance') or 0
+        else:
+            cash_balance = 0
+    
+    cursor.close()
+    conn.close()
+    
+    settings_dict = {row['setting_key']: row['setting_value'] for row in results}
+    
+    # Determine recipient emails - prefer parent_email_addresses, fallback to email_username
+    parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
+    username = settings_dict.get('email_username', '').strip()
+    
+    if parent_emails_str:
+        email_list = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
+    elif username:
+        email_list = [username]
+    else:
+        return  # No email configured
+    
+    if not email_list:
+        return
+    
+    # Format balance information for email
+    balance_info_html = ""
+    balance_info_text = ""
+    if point_balance is not None and cash_balance is not None:
+        balance_info_html = f"""
+            <p>Current point balance: <strong>{point_balance}</strong></p>
+            <p>Current cash balance: <strong>${cash_balance:.2f}</strong></p>
+        """
+        balance_info_text = f"""Current point balance: {point_balance}
+Current cash balance: ${cash_balance:.2f}
+
+"""
+    
+    # Format email subject and body based on notification type
+    if notification_type == 'chore_completed':
+        subject = f"{user_name} completed a chore: {description}"
+        body_html = f"""
+        <html>
+          <head></head>
+          <body>
+            <h2>Chore Completed</h2>
+            <p><strong>{user_name}</strong> completed: <strong>{description}</strong></p>
+            <p>Points earned: <strong>{value if value else 'N/A'}</strong></p>
+            {balance_info_html}
+            <hr>
+            <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+          </body>
+        </html>
+        """
+        body_text = f"""Chore Completed
+
+{user_name} completed: {description}
+Points earned: {value if value else 'N/A'}
+{balance_info_text}Sent from Family Chores application
+        """
+    elif notification_type == 'points_redeemed':
+        subject = f"{user_name} {description.lower()}"
+        body_html = f"""
+        <html>
+          <head></head>
+          <body>
+            <h2>Points Redeemed</h2>
+            <p><strong>{user_name}</strong> redeemed points.</p>
+            <p>Details: <strong>{description}</strong></p>
+            <p>Points redeemed: <strong>{abs(value) if value else 'N/A'}</strong></p>
+            {balance_info_html}
+            <hr>
+            <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+          </body>
+        </html>
+        """
+        body_text = f"""Points Redeemed
+
+{user_name} redeemed points.
+Details: {description}
+Points redeemed: {abs(value) if value else 'N/A'}
+{balance_info_text}Sent from Family Chores application
+        """
+    elif notification_type == 'cash_withdrawn':
+        subject = f"{user_name} withdrew ${abs(value) if value else 'N/A'}"
+        body_html = f"""
+        <html>
+          <head></head>
+          <body>
+            <h2>Cash Withdrawn</h2>
+            <p><strong>{user_name}</strong> withdrew cash.</p>
+            <p>Amount: <strong>${abs(value) if value else 'N/A'}</strong></p>
+            {balance_info_html}
+            <hr>
+            <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+          </body>
+        </html>
+        """
+        body_text = f"""Cash Withdrawn
+
+{user_name} withdrew cash.
+Amount: ${abs(value) if value else 'N/A'}
+{balance_info_text}Sent from Family Chores application
+        """
+    else:
+        return
+    
+    # Send email to all parent addresses (ignore errors - don't fail transaction if email fails)
+    try:
+        for email in email_list:
+            try:
+                send_email(email, subject, body_html, body_text)
+            except Exception:
+                pass  # Silently ignore individual email errors
+    except Exception:
+        pass  # Silently ignore email errors
+
 @app.route('/api/transactions', methods=['POST'])
 def create_transaction():
     """Create a new transaction."""
@@ -724,9 +929,21 @@ def create_transaction():
             WHERE user_id = %s
         ''', (cash_amount, data['user_id']))
     
+    # Get user name for email notification
+    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (data['user_id'],))
+    user_result = cursor.fetchone()
+    user_name = user_result.get('full_name') if user_result else 'Unknown User'
+    
     conn.commit()
     cursor.close()
     conn.close()
+    
+    # Send email notifications if enabled
+    if transaction_type == 'chore_completed':
+        send_notification_email('chore_completed', user_name, description, value, data['user_id'])
+    elif transaction_type == 'points_redemption':
+        send_notification_email('points_redeemed', user_name, description, value, data['user_id'])
+    
     return jsonify({'transaction_id': transaction_id, 'message': 'Transaction created successfully'}), 201
 
 # Settings endpoints
@@ -758,7 +975,16 @@ def get_settings():
         'kid_allowed_record_chore': settings_dict.get('kid_allowed_record_chore', '0') == '1',
         'kid_allowed_redeem_points': settings_dict.get('kid_allowed_redeem_points', '0') == '1',
         'kid_allowed_withdraw_cash': settings_dict.get('kid_allowed_withdraw_cash', '0') == '1',
-        'kid_allowed_view_history': settings_dict.get('kid_allowed_view_history', '0') == '1'
+        'kid_allowed_view_history': settings_dict.get('kid_allowed_view_history', '0') == '1',
+        'email_smtp_server': settings_dict.get('email_smtp_server', ''),
+        'email_smtp_port': settings_dict.get('email_smtp_port', '587'),
+        'email_username': settings_dict.get('email_username', ''),
+        'email_password': '',  # Never return password in API
+        'email_sender_name': settings_dict.get('email_sender_name', 'Family Chores'),
+        'email_notify_chore_completed': settings_dict.get('email_notify_chore_completed', '0') == '1',
+        'email_notify_points_redeemed': settings_dict.get('email_notify_points_redeemed', '0') == '1',
+        'email_notify_cash_withdrawn': settings_dict.get('email_notify_cash_withdrawn', '0') == '1',
+        'parent_email_addresses': settings_dict.get('parent_email_addresses', '')
     }
     
     return jsonify(result)
@@ -881,6 +1107,88 @@ def update_settings():
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
         ''', (value,))
     
+    # Handle email settings
+    if 'email_smtp_server' in data:
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('email_smtp_server', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (data['email_smtp_server'] or '',))
+    
+    if 'email_smtp_port' in data:
+        try:
+            smtp_port = str(data['email_smtp_port']).strip()
+            if smtp_port and not smtp_port.isdigit():
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'SMTP port must be a number'}), 400
+            cursor.execute('''
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('email_smtp_port', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (smtp_port or '587',))
+        except (ValueError, TypeError):
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'SMTP port must be a number'}), 400
+    
+    if 'email_username' in data:
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('email_username', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (data['email_username'] or '',))
+    
+    if 'email_password' in data:
+        # Only update password if provided (not empty)
+        if data['email_password']:
+            # Encrypt the password before storing
+            encrypted_password = encrypt_password(data['email_password'])
+            cursor.execute('''
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('email_password', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (encrypted_password,))
+    
+    # Handle email notification toggles
+    if 'email_notify_chore_completed' in data:
+        value = '1' if data['email_notify_chore_completed'] else '0'
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('email_notify_chore_completed', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
+    
+    if 'email_notify_points_redeemed' in data:
+        value = '1' if data['email_notify_points_redeemed'] else '0'
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('email_notify_points_redeemed', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
+    
+    if 'email_notify_cash_withdrawn' in data:
+        value = '1' if data['email_notify_cash_withdrawn'] else '0'
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('email_notify_cash_withdrawn', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
+    
+    if 'email_sender_name' in data:
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('email_sender_name', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (data['email_sender_name'] or 'Family Chores',))
+    
+    if 'parent_email_addresses' in data:
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('parent_email_addresses', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (data['parent_email_addresses'] or '',))
+    
     conn.commit()
     cursor.close()
     conn.close()
@@ -936,6 +1244,155 @@ def reset_transactions():
         return jsonify({'message': 'All transactions have been deleted'}), 200
     except Exception as e:
         return jsonify({'error': f'Error deleting transactions: {str(e)}'}), 500
+
+def send_email(to_email, subject, body_html, body_text=None):
+    """Send an email using SMTP settings from the database.
+    
+    Args:
+        to_email: Recipient email address
+        subject: Email subject
+        body_html: HTML body content
+        body_text: Plain text body content (optional)
+    
+    Returns:
+        tuple: (success: bool, message: str) - success indicates if email was sent, message contains status or error
+    """
+    try:
+        # Get email settings from database
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE %s', ('email_%',))
+        settings = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+        
+        smtp_server = settings_dict.get('email_smtp_server', '').strip()
+        smtp_port = settings_dict.get('email_smtp_port', '587').strip()
+        username = settings_dict.get('email_username', '').strip()
+        encrypted_password = settings_dict.get('email_password', '').strip()
+        # Decrypt the password
+        password = decrypt_password(encrypted_password)
+        sender_name = settings_dict.get('email_sender_name', 'Family Chores').strip()
+        
+        # Validate required settings
+        if not smtp_server or not smtp_port or not username or not password:
+            return False, "Email settings are not configured. Please configure SMTP settings in Settings."
+        
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = formataddr((sender_name, username))
+        msg['To'] = to_email
+        
+        # Add text and HTML parts
+        if body_text:
+            text_part = MIMEText(body_text, 'plain')
+            msg.attach(text_part)
+        
+        html_part = MIMEText(body_html, 'html')
+        msg.attach(html_part)
+        
+        # Connect to SMTP server and send
+        try:
+            smtp_port_int = int(smtp_port)
+            server = smtplib.SMTP(smtp_server, smtp_port_int, timeout=10)
+            server.starttls()  # Enable encryption
+            server.login(username, password)
+            server.send_message(msg)
+            server.quit()
+            return True, "Email sent successfully"
+        except smtplib.SMTPAuthenticationError:
+            return False, "SMTP authentication failed. Please check your username and password."
+        except smtplib.SMTPConnectError:
+            return False, f"Could not connect to SMTP server {smtp_server}:{smtp_port}. Please check your SMTP settings."
+        except smtplib.SMTPException as e:
+            return False, f"SMTP error: {str(e)}"
+        except Exception as e:
+            return False, f"Error sending email: {str(e)}"
+    
+    except Exception as e:
+        return False, f"Error: {str(e)}"
+
+@app.route('/api/send-test-email', methods=['POST'])
+@parent_required
+def send_test_email():
+    """Send a test email to verify email configuration."""
+    data = request.get_json()
+    
+    # Get parent email addresses from request
+    parent_emails = data.get('parent_email_addresses', [])
+    
+    # Get email settings from database
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s)', ('email_username', 'parent_email_addresses'))
+    settings = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+    username = settings_dict.get('email_username', '').strip()
+    stored_parent_emails = settings_dict.get('parent_email_addresses', '').strip()
+    
+    # Determine recipient emails
+    if parent_emails and len(parent_emails) > 0:
+        # Use provided emails
+        email_list = [e.strip() for e in parent_emails if e.strip()]
+    elif stored_parent_emails:
+        # Use stored parent emails
+        email_list = [e.strip() for e in stored_parent_emails.split(',') if e.strip()]
+    elif username:
+        # Fallback to username
+        email_list = [username]
+    else:
+        return jsonify({'error': 'Please provide parent email addresses or configure a username in email settings'}), 400
+    
+    # Validate email formats (basic check)
+    for email in email_list:
+        if '@' not in email or '.' not in email.split('@')[1]:
+            return jsonify({'error': f'Invalid email address format: {email}'}), 400
+    
+    # Send test email to all addresses
+    subject = "Family Chores - Test Email"
+    body_html = """
+    <html>
+      <head></head>
+      <body>
+        <h2>Test Email from Family Chores</h2>
+        <p>This is a test email to verify that your email notification settings are configured correctly.</p>
+        <p>If you received this email, your SMTP settings are working properly!</p>
+        <hr>
+        <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+      </body>
+    </html>
+    """
+    body_text = """Test Email from Family Chores
+
+This is a test email to verify that your email notification settings are configured correctly.
+
+If you received this email, your SMTP settings are working properly!
+
+Sent from Family Chores application
+    """
+    
+    # Send email to each address
+    success_count = 0
+    error_messages = []
+    for email in email_list:
+        success, message = send_email(email, subject, body_html, body_text)
+        if success:
+            success_count += 1
+        else:
+            error_messages.append(f'{email}: {message}')
+    
+    if success_count == len(email_list):
+        return jsonify({'message': f'Test email sent successfully to {success_count} address(es)'}), 200
+    elif success_count > 0:
+        return jsonify({'error': f'Partially sent: {success_count}/{len(email_list)} successful. Errors: {"; ".join(error_messages)}'}), 400
+    else:
+        return jsonify({'error': f'Failed to send: {"; ".join(error_messages)}'}), 400
 
 @app.route('/api/withdraw-cash', methods=['POST'])
 def withdraw_cash():
@@ -1005,9 +1462,17 @@ def withdraw_cash():
     result = cursor.fetchone()
     transaction_id = result['transaction_id'] if result else None
     
+    # Get user name for email notification
+    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (data['user_id'],))
+    user_result = cursor.fetchone()
+    user_name = user_result.get('full_name') if user_result else 'Unknown User'
+    
     conn.commit()
     cursor.close()
     conn.close()
+    
+    # Send email notification if enabled
+    send_notification_email('cash_withdrawn', user_name, f'Cash withdrawal of ${amount:.2f}', amount, data['user_id'])
     
     return jsonify({
         'transaction_id': transaction_id,
