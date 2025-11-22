@@ -31,7 +31,8 @@ A web application for managing family chores, points, and rewards using Python a
 - Redemptions are tracked in the transactions table
 
 #### Automatic Daily Cash Out
-- **Automatic Daily Cash Out**: When enabled, converts excess points to cash at midnight local system time
+- **Automatic Daily Cash Out**: When enabled, converts excess points to cash at a configurable time (default: midnight) in local system time
+- **Cash Out Time**: Configure the time when daily cash out runs (24-hour format, e.g., 00:00 for midnight, 14:30 for 2:30 PM)
 - **Max Rollover Points**: Maximum points to keep in point balance (default: 4)
 - Conversion rate: 5 points = $1
 

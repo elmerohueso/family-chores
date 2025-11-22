@@ -170,6 +170,11 @@ def init_database():
     ''')
     cursor.execute('''
         INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('daily_cash_out_time', '00:00')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
         VALUES ('max_rollover_points', '4')
         ON CONFLICT (setting_key) DO NOTHING
     ''')

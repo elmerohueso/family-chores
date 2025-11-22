@@ -784,7 +784,12 @@
                             </label>
                         </div>
                         <div class="setting-description">
-                            When enabled, excess points (above Max Rollover Points) are automatically converted to cash at midnight at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
+                            When enabled, excess points (above Max Rollover Points) are automatically converted to cash at the configured time at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
+                        </div>
+                        <div class="input-group" style="margin-top: 12px;">
+                            <label for="dailyCashOutTime" style="color: #666; margin-right: 8px;">Cash Out Time:</label>
+                            <input type="time" id="dailyCashOutTime" class="number-input" required style="width: 180px;">
+                            <span style="color: #666; margin-left: 8px;">(24-hour format)</span>
                         </div>
                     </div>
 
@@ -1083,6 +1088,9 @@
                 const settings = await response.json();
 
                 document.getElementById('automaticDailyCashOut').checked = settings.automatic_daily_cash_out;
+                // Set cash out time (format: HH:MM, convert to time input format)
+                const cashOutTime = settings.daily_cash_out_time || '00:00';
+                document.getElementById('dailyCashOutTime').value = cashOutTime;
                 document.getElementById('maxRolloverPoints').value = settings.max_rollover_points;
                 document.getElementById('dailyCooldownHours').value = settings.daily_cooldown_hours || 12;
                 document.getElementById('weeklyCooldownDays').value = settings.weekly_cooldown_days || 4;
@@ -1119,6 +1127,7 @@
 
             const data = {
                 automatic_daily_cash_out: document.getElementById('automaticDailyCashOut').checked,
+                daily_cash_out_time: document.getElementById('dailyCashOutTime').value,
                 max_rollover_points: parseInt(document.getElementById('maxRolloverPoints').value),
                 daily_cooldown_hours: parseInt(document.getElementById('dailyCooldownHours').value),
                 weekly_cooldown_days: parseInt(document.getElementById('weeklyCooldownDays').value),

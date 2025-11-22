@@ -1355,6 +1355,7 @@ def get_settings():
     # Convert string values to appropriate types
     result = {
         'automatic_daily_cash_out': settings_dict.get('automatic_daily_cash_out', '1') == '1',
+        'daily_cash_out_time': settings_dict.get('daily_cash_out_time', '00:00'),
         'max_rollover_points': int(settings_dict.get('max_rollover_points', '4')),
         'daily_cooldown_hours': int(settings_dict.get('daily_cooldown_hours', '12')),
         'weekly_cooldown_days': int(settings_dict.get('weekly_cooldown_days', '4')),
@@ -1405,6 +1406,32 @@ def update_settings():
             VALUES ('automatic_daily_cash_out', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
         ''', (value,))
+    
+    if 'daily_cash_out_time' in data:
+        time_value = data['daily_cash_out_time']
+        # Validate time format (HH:MM)
+        try:
+            time_parts = time_value.split(':')
+            if len(time_parts) != 2:
+                raise ValueError('Invalid time format')
+            hour = int(time_parts[0])
+            minute = int(time_parts[1])
+            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Time must be in 24-hour format (00:00 to 23:59)'}), 400
+            old_value = current_settings.get('daily_cash_out_time', '00:00')
+            if time_value != old_value:
+                changed_settings['daily_cash_out_time'] = {'old': old_value, 'new': time_value}
+            cursor.execute('''
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('daily_cash_out_time', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (time_value,))
+        except (ValueError, TypeError) as e:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Daily cash out time must be in HH:MM format (e.g., 00:00 for midnight)'}), 400
     
     if 'max_rollover_points' in data:
         try:
@@ -2087,6 +2114,8 @@ def get_setting(key, default):
             return result.get('setting_value') == '1'
         elif key == 'max_rollover_points':
             return int(result.get('setting_value'))
+        elif key == 'daily_cash_out_time':
+            return result.get('setting_value', default)
         return result.get('setting_value')
     return default
 
@@ -2236,20 +2265,30 @@ def daily_cash_out_worker():
             process_date = current_date
             reason = ""
             
+            # Get configured cash out time (default to midnight)
+            cash_out_time_str = get_setting('daily_cash_out_time', '00:00')
+            try:
+                cash_out_hour, cash_out_minute = map(int, cash_out_time_str.split(':'))
+            except (ValueError, AttributeError):
+                # Fallback to midnight if parsing fails
+                cash_out_hour, cash_out_minute = 0, 0
+                print(f"Warning: Failed to parse cash out time '{cash_out_time_str}', using midnight (00:00)")
+            
+            # Debug logging (can be removed later)
+            if now.minute % 10 == 0:  # Log every 10 minutes for debugging
+                print(f"Cash out check: current={now.hour:02d}:{now.minute:02d}, scheduled={cash_out_hour:02d}:{cash_out_minute:02d}, last_processed={last_processed_date}")
+            
             # Check if we need to process today
-            # Process at midnight local time (00:00:00 to 00:00:59 for reliability)
-            # This ensures we catch midnight even if the check runs slightly after 00:00:00
-            if now.hour == 0 and now.minute < 1:
+            # Process at configured time (check if we're in the scheduled minute)
+            if now.hour == cash_out_hour and now.minute == cash_out_minute:
                 if last_processed_date != current_date:
                     should_process = True
-                    reason = f"Regular midnight processing for {current_date} (local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
-            # Recovery check: If it's early morning (1:00-1:05) and we missed yesterday, process it
-            elif now.hour == 1 and now.minute < 5:
-                yesterday = current_date - timedelta(days=1)
-                if last_processed_date != current_date and last_processed_date != yesterday:
+                    reason = f"Regular scheduled processing for {current_date} at {cash_out_time_str} (local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
+            # Recovery check: If it's within 10 minutes after scheduled time and we missed today, process it
+            elif now.hour == cash_out_hour and now.minute > cash_out_minute and now.minute <= cash_out_minute + 10:
+                if last_processed_date != current_date:
                     should_process = True
-                    process_date = yesterday
-                    reason = f"Recovery processing for {yesterday} (missed yesterday, local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
+                    reason = f"Recovery processing for {current_date} (missed scheduled time {cash_out_time_str}, local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
             
             if should_process:
                 print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')} (local system time): {reason}")
