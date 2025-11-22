@@ -80,25 +80,11 @@ Parents have full control over what kids can access through granular permission 
 ### Prerequisites
 - Docker
 - Docker Compose
-- Docker Buildx (only for building)
 
 ### Run using pre-built image
 1. Download docker-compose.yml from this repository
 2. Edit the environment variables, ports, and volumes as desired
 3. From the directory housing docker-compose.yml, run the following commands:
-
-`docker compose up -d`
-
-The application will be available at `http://localhost:8000` (or at the specified port)
-
-### Build and run from source
-1. Clone this repository
-2. Edit the environment variables, ports, and volumes in docker-compose.yml as desired
-3. From the directory housing docker-compose.yml, run the following commands:
-
-`docker buildx create --name multiarch-builder --use --bootstrap`
-
-`docker buildx . --platform linux/amd64,linux/arm64`
 
 `docker compose up -d`
 
