@@ -14,7 +14,7 @@ A web application for managing family chores, points, and rewards using Python a
 - **Kid Permissions**: Granular control over what kids can do (record chores, redeem points, withdraw cash, view history)
 - **Automatic Daily Cash Out**: Configurable automatic conversion of points to cash at midnight
 - **Chore Cooldown Periods**: Prevent chores from being completed too frequently (daily, weekly, monthly)
-- **Email Notifications**: Receive email alerts for chore completions, point redemptions, and cash withdrawals
+- **Email Notifications**: Receive immediate email alerts for chore completions, point redemptions, and cash withdrawals, plus optional daily digest summary
 - **Settings Management**: Configure system settings, manage chores list, and reset data
 - **CSV Import**: Bulk import chores from CSV files
 
@@ -48,10 +48,12 @@ A web application for managing family chores, points, and rewards using Python a
 
 #### Email Notifications
 - Configure SMTP settings for email alerts
-- Receive notifications for chore completions, point redemptions, and cash withdrawals
+- Receive immediate notifications for chore completions, point redemptions, and cash withdrawals
+- **Daily Digest**: Receive a daily summary email at midnight with today's transaction history and current balances for all users
 - Support for multiple parent email addresses
 - Encrypted password storage for SMTP authentication
 - Test email functionality to verify configuration
+- Manual daily digest send button for testing
 
 ## User Roles
 Parents have full control over what kids can access through granular permission settings.

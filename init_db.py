@@ -215,6 +215,11 @@ def init_database():
     ''')
     cursor.execute('''
         INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('email_notify_daily_digest', '0')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
         VALUES ('email_smtp_server', '')
         ON CONFLICT (setting_key) DO NOTHING
     ''')

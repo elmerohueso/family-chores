@@ -840,7 +840,7 @@
                             <span class="setting-title">Kid Permissions</span>
                         </div>
                         <div class="setting-subtitle">
-                            Kid's can:
+                            Kids can:
                         </div>
                         <div style="margin-top: 16px;">
                             <div class="setting-label" style="margin-bottom: 16px;">
@@ -907,14 +907,17 @@
                                 </div>
                                 <div style="text-align: right; margin-bottom: 12px;">
                                     <button type="button" class="btn-manual-cashout" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
+                                    <button type="button" class="btn-manual-cashout" id="sendDigestBtn" onclick="sendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
                                     <div id="emailTestMessage" class="system-message"></div>
                                 </div>
                                 
                             </div>
-                            <div class="setting-subtitle">
-                                Notify when:
-                            </div>
                                 <div class="setting-label" style="margin-bottom: 16px;">
+                                    <div class="setting-subtitle">
+                                        Notify immediately when:
+                                    </div>
+                                    </div>
+                                    <div class="setting-label" style="margin-bottom: 16px;">
                                     <span class="setting-name" style="font-size: 16px;">A chore is completed</span>
                                     <label class="toggle-switch">
                                         <input type="checkbox" id="emailNotifyChoreCompleted">
@@ -934,6 +937,17 @@
                                         <input type="checkbox" id="emailNotifyCashWithdrawn">
                                         <span class="toggle-slider"></span>
                                     </label>
+                                </div>
+                                <div class="setting-label" style="margin-bottom: 16px;">
+                                    <span class="setting-subtitle">Daily Digest</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="emailNotifyDailyDigest">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-description">
+                                    Daily digest sent at midnight with today's history and current balances
+                                </div>
                     
                             </div>
                         </div>
@@ -1108,6 +1122,7 @@
                 document.getElementById('emailNotifyChoreCompleted').checked = settings.email_notify_chore_completed || false;
                 document.getElementById('emailNotifyPointsRedeemed').checked = settings.email_notify_points_redeemed || false;
                 document.getElementById('emailNotifyCashWithdrawn').checked = settings.email_notify_cash_withdrawn || false;
+                document.getElementById('emailNotifyDailyDigest').checked = settings.email_notify_daily_digest || false;
                 document.getElementById('parentEmailAddresses').value = settings.parent_email_addresses || '';
 
                 const loadingDiv = document.getElementById('loading');
@@ -1143,6 +1158,7 @@
                 email_notify_chore_completed: document.getElementById('emailNotifyChoreCompleted').checked,
                 email_notify_points_redeemed: document.getElementById('emailNotifyPointsRedeemed').checked,
                 email_notify_cash_withdrawn: document.getElementById('emailNotifyCashWithdrawn').checked,
+                email_notify_daily_digest: document.getElementById('emailNotifyDailyDigest').checked,
                 parent_email_addresses: document.getElementById('parentEmailAddresses').value.trim()
             };
 
@@ -1947,6 +1963,75 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Send Test Email';
+            }
+        }
+
+        // Send daily digest email
+        async function sendDailyDigest() {
+            const btn1 = document.getElementById('sendDigestBtn');
+            const btn2 = document.getElementById('sendDigestBtn2');
+            const messageDiv = document.getElementById('emailTestMessage');
+            
+            // Disable both buttons
+            if (btn1) {
+                btn1.disabled = true;
+                btn1.textContent = 'Sending...';
+            }
+            if (btn2) {
+                btn2.disabled = true;
+                btn2.textContent = 'Sending...';
+            }
+            messageDiv.className = 'system-message';
+            messageDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/send-daily-digest', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    messageDiv.textContent = result.message || 'Daily digest email sent successfully!';
+                    messageDiv.className = 'system-message success';
+                    messageDiv.style.display = 'block';
+                    
+                    // Hide message after 10 seconds
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                    }, 10000);
+                } else {
+                    messageDiv.textContent = result.error || 'Error sending daily digest email';
+                    messageDiv.className = 'system-message error';
+                    messageDiv.style.display = 'block';
+                    
+                    // Hide message after 10 seconds
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                    }, 10000);
+                }
+            } catch (error) {
+                messageDiv.textContent = 'Network error. Please try again.';
+                messageDiv.className = 'system-message error';
+                messageDiv.style.display = 'block';
+                console.error('Error:', error);
+                
+                // Hide message after 10 seconds
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 10000);
+            } finally {
+                if (btn1) {
+                    btn1.disabled = false;
+                    btn1.textContent = 'Send Daily Digest';
+                }
+                if (btn2) {
+                    btn2.disabled = false;
+                    btn2.textContent = 'Send Daily Digest Now';
+                }
             }
         }
     </script>
