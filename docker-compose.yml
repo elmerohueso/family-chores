@@ -37,6 +37,8 @@ services:
       - PARENT_PIN=1234
       # Valid timezone values: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
       - TZ=America/Denver
+      # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
+      - LOG_LEVEL=INFO
     networks:
       - familychores-network
     depends_on:
