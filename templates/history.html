@@ -401,14 +401,43 @@
 
         function formatTimestamp(timestamp) {
             if (!timestamp) return 'N/A';
-            const date = new Date(timestamp);
-            return date.toLocaleString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
+            // Parse timestamp string directly without timezone conversion
+            // The timestamp is already in the server's local timezone (set via TZ)
+            // We parse the string directly to avoid browser timezone conversion
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            
+            let year, month, day, hour, minute;
+            
+            if (typeof timestamp === 'string') {
+                // Parse ISO format string directly (e.g., "2024-01-15T12:30:00" or "2024-01-15T12:30:00-07:00")
+                // Extract date/time components from the string without timezone conversion
+                const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+                if (match) {
+                    year = parseInt(match[1]);
+                    month = parseInt(match[2]) - 1; // 0-indexed
+                    day = parseInt(match[3]);
+                    hour = parseInt(match[4]);
+                    minute = parseInt(match[5]);
+                } else {
+                    // Fallback: try to parse as Date (may apply timezone conversion)
+                    const date = new Date(timestamp);
+                    year = date.getFullYear();
+                    month = date.getMonth();
+                    day = date.getDate();
+                    hour = date.getHours();
+                    minute = date.getMinutes();
+                }
+            } else {
+                // Not a string, use as-is (shouldn't happen)
+                return 'N/A';
+            }
+            
+            // Format the date/time components
+            const hour12 = hour % 12 || 12;
+            const ampm = hour < 12 ? 'AM' : 'PM';
+            const minuteStr = minute.toString().padStart(2, '0');
+            
+            return `${months[month]} ${day}, ${year} ${hour12}:${minuteStr} ${ampm}`;
         }
 
         function getTransactionType(transaction) {

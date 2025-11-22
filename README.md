@@ -31,7 +31,7 @@ A web application for managing family chores, points, and rewards using Python a
 - Redemptions are tracked in the transactions table
 
 #### Automatic Daily Cash Out
-- **Automatic Daily Cash Out**: When enabled, converts excess points to cash at midnight
+- **Automatic Daily Cash Out**: When enabled, converts excess points to cash at midnight local system time
 - **Max Rollover Points**: Maximum points to keep in point balance (default: 4)
 - Conversion rate: 5 points = $1
 
@@ -107,6 +107,7 @@ The application will be available at `http://localhost:8000` (or at the specifie
 - `POSTGRES_USER` - Database user (default: `family_chores`)
 - `POSTGRES_PASSWORD` - Database password (default: `family_chores`)
 - `PARENT_PIN` - PIN required for Parent login (default: `1234`)
+- `TZ` - Set to your local timezone (default: `America/Denver`)
 
 #### Volumes
 - `db_data`: PostgreSQL data directory

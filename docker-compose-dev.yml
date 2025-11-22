@@ -36,6 +36,8 @@ services:
       - POSTGRES_USER=family_chores
       - POSTGRES_PASSWORD=family_chores
       - PARENT_PIN=1234
+      # Valid timezone values: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
+      - TZ=America/Denver
     networks:
       - familychores-network
     depends_on:

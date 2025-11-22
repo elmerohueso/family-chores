@@ -176,6 +176,11 @@ def log_system_event(log_type, message, details=None, status='success', ip_addre
         # Silently fail to avoid breaking main functionality
         print(f"Error logging system event: {e}")
 
+def get_local_timezone():
+    """Get the local system timezone."""
+    # Get local timezone by converting UTC to local
+    return datetime.now(timezone.utc).astimezone().tzinfo
+
 def get_system_timestamp():
     """Get current timestamp in system timezone as ISO format string."""
     # Get current time in UTC first, then convert to system's local timezone
@@ -185,6 +190,25 @@ def get_system_timestamp():
     now_local = now_utc.astimezone()
     # Return as ISO format string with timezone offset
     return now_local.isoformat()
+
+def make_timezone_aware(dt):
+    """Convert a naive datetime to timezone-aware datetime in local system timezone.
+    
+    Args:
+        dt: datetime object (naive or timezone-aware)
+    
+    Returns:
+        timezone-aware datetime in local system timezone
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        # Naive datetime - assume it's in local system time
+        local_tz = get_local_timezone()
+        return dt.replace(tzinfo=local_tz)
+    else:
+        # Already timezone-aware, convert to local timezone
+        return dt.astimezone()
 
 def parent_required(f):
     """Decorator to require parent role."""
@@ -325,6 +349,24 @@ def get_version():
     return jsonify({
         'version': __version__,
         'github_url': GITHUB_REPO_URL
+    }), 200
+
+@app.route('/api/system-time', methods=['GET'])
+def get_system_time():
+    """Get current server time in server's local timezone (set via TZ)."""
+    # Get current time in server's local timezone
+    now = datetime.now()
+    # Convert to timezone-aware and get ISO format with timezone
+    now_aware = make_timezone_aware(now)
+    iso_timestamp = now_aware.isoformat()
+    
+    return jsonify({
+        'time': now.strftime('%H:%M:%S'),
+        'hour': now.hour,
+        'minute': now.minute,
+        'second': now.second,
+        'timestamp': iso_timestamp,
+        'unix_ms': int(now_aware.timestamp() * 1000)  # Unix timestamp in milliseconds
     }), 200
 
 @app.route('/add-user')
@@ -961,7 +1003,20 @@ def get_transactions():
     transactions = cursor.fetchall()
     cursor.close()
     conn.close()
-    return jsonify([dict(transaction) for transaction in transactions])
+    
+    # Convert timestamps to ISO format with timezone info (same as system_log)
+    transactions_list = []
+    for transaction in transactions:
+        transaction_dict = dict(transaction)
+        timestamp = transaction_dict.get('timestamp')
+        if timestamp:
+            # Timestamps are stored as naive datetimes in local system time
+            # Convert to timezone-aware and then to ISO format string
+            timestamp_aware = make_timezone_aware(timestamp)
+            transaction_dict['timestamp'] = timestamp_aware.isoformat()
+        transactions_list.append(transaction_dict)
+    
+    return jsonify(transactions_list)
 
 @app.route('/history')
 @kid_permission_required('kid_allowed_view_history')
@@ -2156,13 +2211,22 @@ def set_last_daily_cash_out_date(date):
         traceback.print_exc()
 
 def daily_cash_out_worker():
-    """Background worker that checks for midnight and processes daily cash out."""
+    """Background worker that checks for midnight local system time and processes daily cash out."""
     print("Daily cash out worker thread started")
+    # Log timezone info for debugging
+    try:
+        import time as time_module_for_tz
+        tz_offset = time_module_for_tz.timezone if hasattr(time_module_for_tz, 'timezone') else 0
+        print(f"Daily cash out worker using local system time (timezone offset: {tz_offset} seconds)")
+    except:
+        pass
     
     while True:
         try:
+            # Use local system time (datetime.now() without timezone returns local time)
             now = datetime.now()
             current_date = now.date()
+            current_time = now.time()
             
             # Get last processed date from database (persisted across restarts)
             last_processed_date = get_last_daily_cash_out_date()
@@ -2173,23 +2237,22 @@ def daily_cash_out_worker():
             reason = ""
             
             # Check if we need to process today
-            # Process if:
-            # 1. It's between 00:00 and 01:00 (wider window for reliability)
-            # 2. We haven't processed today yet
-            if now.hour == 0:
+            # Process at midnight local time (00:00:00 to 00:00:59 for reliability)
+            # This ensures we catch midnight even if the check runs slightly after 00:00:00
+            if now.hour == 0 and now.minute < 1:
                 if last_processed_date != current_date:
                     should_process = True
-                    reason = f"Regular midnight processing for {current_date}"
+                    reason = f"Regular midnight processing for {current_date} (local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
             # Recovery check: If it's early morning (1:00-1:05) and we missed yesterday, process it
             elif now.hour == 1 and now.minute < 5:
                 yesterday = current_date - timedelta(days=1)
                 if last_processed_date != current_date and last_processed_date != yesterday:
                     should_process = True
                     process_date = yesterday
-                    reason = f"Recovery processing for {yesterday} (missed yesterday)"
+                    reason = f"Recovery processing for {yesterday} (missed yesterday, local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
             
             if should_process:
-                print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')}: {reason}")
+                print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')} (local system time): {reason}")
                 try:
                     process_daily_cash_out()
                     # Store the date we just processed
@@ -2333,18 +2396,9 @@ def get_system_logs():
             timestamp = log['timestamp']
             if timestamp:
                 # Timestamps are stored as naive datetimes in local system time
-                # Convert to ISO format string - if naive, assume it's already in local time
-                if timestamp.tzinfo is None:
-                    # Naive datetime - assume it's in local system time
-                    # Convert to timezone-aware for proper ISO formatting
-                    # Get local timezone offset
-                    local_tz = datetime.now(timezone.utc).astimezone().tzinfo
-                    timestamp_aware = timestamp.replace(tzinfo=local_tz)
-                    timestamp_str = timestamp_aware.isoformat()
-                else:
-                    # Already timezone-aware, ensure it's in local time
-                    timestamp_local = timestamp.astimezone()
-                    timestamp_str = timestamp_local.isoformat()
+                # Convert to timezone-aware and then to ISO format string
+                timestamp_aware = make_timezone_aware(timestamp)
+                timestamp_str = timestamp_aware.isoformat()
             else:
                 timestamp_str = None
             
