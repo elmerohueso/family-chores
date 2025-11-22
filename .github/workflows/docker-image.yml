@@ -20,11 +20,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+      - name: authenticat
+        run: |
+          echo ${{secrets.CR_PAT}} | docker login ghcr.io -u elmerohueso --password-stdin
       - name: build image
         run: |
           docker buildx create --name multiarch-builder --use --bootstrap
-          docker buildx build --platform linux/amd64,linux/arm64 --tag ghcr.io/elmerohueso/family-chores:latest .
-      - name: push image
-        run: |
-          echo ${{secrets.CR_PAT}} | docker login ghcr.io -u elmerohueso --password-stdin
-          docker push ghcr.io/elmerohueso/family-chores:latest
+          docker buildx build --platform linux/amd64,linux/arm64 --tag ghcr.io/elmerohueso/family-chores:latest --push .
