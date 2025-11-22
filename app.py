@@ -1332,6 +1332,7 @@ def get_settings():
         'email_notify_chore_completed': settings_dict.get('email_notify_chore_completed', '0') == '1',
         'email_notify_points_redeemed': settings_dict.get('email_notify_points_redeemed', '0') == '1',
         'email_notify_cash_withdrawn': settings_dict.get('email_notify_cash_withdrawn', '0') == '1',
+        'email_notify_daily_digest': settings_dict.get('email_notify_daily_digest', '0') == '1',
         'parent_email_addresses': settings_dict.get('parent_email_addresses', '')
     }
     
@@ -1609,6 +1610,17 @@ def update_settings():
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('email_notify_cash_withdrawn', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
+    
+    if 'email_notify_daily_digest' in data:
+        value = '1' if data['email_notify_daily_digest'] else '0'
+        old_value = current_settings.get('email_notify_daily_digest', '0')
+        if value != old_value:
+            changed_settings['email_notify_daily_digest'] = {'old': old_value == '1', 'new': data['email_notify_daily_digest']}
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('email_notify_daily_digest', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
         ''', (value,))
     
@@ -1966,6 +1978,18 @@ Sent from Family Chores application
     else:
         return jsonify({'error': f'Failed to send: {"; ".join(error_messages)}'}), 400
 
+@app.route('/api/send-daily-digest', methods=['POST'])
+@parent_required
+def send_daily_digest_manual():
+    """Manually trigger sending of daily digest email."""
+    try:
+        send_daily_digest_email(force=True)
+        return jsonify({'message': 'Daily digest email sent successfully'}), 200
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error manually sending daily digest: {error_msg}", exc_info=True)
+        return jsonify({'error': f'Error sending daily digest: {error_msg}'}), 500
+
 @app.route('/api/withdraw-cash', methods=['POST'])
 def withdraw_cash():
     """Withdraw cash from a user's cash balance."""
@@ -2307,6 +2331,242 @@ def daily_cash_out_worker():
             
             time_module.sleep(60)
 
+def send_daily_digest_email(force=False):
+    """Generate and send daily digest email with today's history and current balances.
+    
+    Args:
+        force: If True, send email even if daily digest notification is disabled (for manual sends)
+    """
+    # Check if daily digest is enabled (unless forced)
+    if not force and not get_email_notification_setting('email_notify_daily_digest'):
+        return
+    
+    try:
+        # Get parent email addresses
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s, %s, %s, %s, %s)', 
+                      ('parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
+        results = cursor.fetchall()
+        settings_dict = {row['setting_key']: row['setting_value'] for row in results}
+        
+        parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
+        if not parent_emails_str:
+            cursor.close()
+            conn.close()
+            if force:
+                raise ValueError("No parent email addresses configured")
+            return
+        
+        parent_emails = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
+        if not parent_emails:
+            cursor.close()
+            conn.close()
+            if force:
+                raise ValueError("No parent email addresses configured")
+            return
+        
+        # Get today's date in local timezone
+        now = datetime.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        # Get all transactions for today
+        cursor.execute('''
+            SELECT 
+                t.transaction_id,
+                t.user_id,
+                t.description,
+                t.value,
+                t.transaction_type,
+                t.timestamp,
+                u.full_name as user_name
+            FROM transactions t
+            LEFT JOIN "user" u ON t.user_id = u.user_id
+            WHERE t.timestamp >= %s AND t.timestamp <= %s
+            ORDER BY t.timestamp DESC
+        ''', (today_start, today_end))
+        transactions = cursor.fetchall()
+        
+        # Get all users with their current balances
+        cursor.execute('''
+            SELECT 
+                u.user_id,
+                u.full_name,
+                u.balance as point_balance,
+                COALESCE(cb.cash_balance, 0.0) as cash_balance
+            FROM "user" u
+            LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
+            ORDER BY u.user_id
+        ''')
+        users = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        # Format transactions for email
+        transactions_html = ""
+        transactions_text = ""
+        if transactions:
+            for t in transactions:
+                transaction_type = t.get('transaction_type', '')
+                value = t.get('value', 0)
+                description = t.get('description', '')
+                user_name = t.get('user_name', 'Unknown')
+                timestamp = t.get('timestamp')
+                
+                if timestamp:
+                    timestamp_aware = make_timezone_aware(timestamp)
+                    time_str = timestamp_aware.strftime('%I:%M %p')
+                else:
+                    time_str = 'N/A'
+                
+                if transaction_type == 'chore_completed':
+                    type_label = "Chore Completed"
+                    value_display = f"+{value} points"
+                elif transaction_type == 'points_redemption':
+                    type_label = "Points Redeemed"
+                    value_display = f"-{abs(value)} points"
+                elif transaction_type == 'cash_withdrawal':
+                    type_label = "Cash Withdrawn"
+                    value_display = f"-${abs(value):.2f}"
+                else:
+                    type_label = "Transaction"
+                    if value >= 0:
+                        value_display = f"+{value} points"
+                    else:
+                        value_display = f"{value} points"
+                
+                transactions_html += f"""
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
+                </tr>
+                """
+                transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
+        else:
+            transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions today</td></tr>"
+            transactions_text = "No transactions today\n"
+        
+        # Format user balances
+        balances_html = ""
+        balances_text = ""
+        for user in users:
+            user_name = user.get('full_name', 'Unknown')
+            point_balance = user.get('point_balance', 0) or 0
+            cash_balance = user.get('cash_balance', 0) or 0
+            balances_html += f"""
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{point_balance} points</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${cash_balance:.2f}</td>
+            </tr>
+            """
+            balances_text += f"{user_name}: {point_balance} points, ${cash_balance:.2f}\n"
+        
+        # Generate email content
+        date_str = now.strftime('%B %d, %Y')
+        subject = f"Family Chores Daily Digest - {date_str}"
+        
+        body_html = f"""
+        <html>
+          <head></head>
+          <body>
+            <h2>Daily Digest - {date_str}</h2>
+            
+            <h3>Today's Activity</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <thead>
+                    <tr style="background-color: #f5f5f5;">
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
+                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {transactions_html}
+                </tbody>
+            </table>
+            
+            <h3>Current Balances</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <thead>
+                    <tr style="background-color: #f5f5f5;">
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
+                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Points</th>
+                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Cash</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {balances_html}
+                </tbody>
+            </table>
+            
+            <hr>
+            <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+          </body>
+        </html>
+        """
+        
+        body_text = f"""Daily Digest - {date_str}
+
+Today's Activity:
+{transactions_text}
+
+Current Balances:
+{balances_text}
+
+Sent from Family Chores application
+        """
+        
+        # Send email to all parent addresses
+        success_count = 0
+        error_messages = []
+        for email in parent_emails:
+            success, message = send_email(email, subject, body_html, body_text)
+            if success:
+                logger.info(f"Daily digest email sent to {email}")
+                success_count += 1
+            else:
+                logger.error(f"Failed to send daily digest email to {email}: {message}")
+                error_messages.append(f"{email}: {message}")
+        
+        # If forced (manual send), raise exception if all failed
+        if force and success_count == 0:
+            raise Exception(f"Failed to send daily digest to any address: {'; '.join(error_messages) if error_messages else 'Unknown error'}")
+    
+    except Exception as e:
+        logger.error(f"Error sending daily digest email: {e}", exc_info=True)
+
+def daily_digest_worker():
+    """Background worker that sends daily digest email at midnight."""
+    logger.debug("Daily digest worker thread started")
+    
+    while True:
+        try:
+            # Get current time in local system timezone
+            now = datetime.now()
+            current_date = now.date()
+            
+            # Check if it's midnight (00:00)
+            if now.hour == 0 and now.minute == 0:
+                logger.info(f"Sending daily digest email for {current_date}")
+                send_daily_digest_email()
+                # Sleep for 1 minute to avoid sending multiple times in the same minute
+                time_module.sleep(60)
+            else:
+                # Sleep for 1 minute and check again
+                time_module.sleep(60)
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error in daily digest worker: {error_msg}", exc_info=True)
+            time_module.sleep(60)
+
 def start_daily_cash_out_scheduler():
     """Start the background thread for daily cash out."""
     try:
@@ -2316,8 +2576,18 @@ def start_daily_cash_out_scheduler():
     except Exception as e:
         logger.error(f"Failed to start daily cash out scheduler: {e}", exc_info=True)
 
-# Start the scheduler when module is imported (works in all deployment scenarios)
+def start_daily_digest_scheduler():
+    """Start the background thread for daily digest emails."""
+    try:
+        thread = threading.Thread(target=daily_digest_worker, daemon=True, name="DailyDigestWorker")
+        thread.start()
+        logger.info("Daily digest scheduler started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start daily digest scheduler: {e}", exc_info=True)
+
+# Start the schedulers when module is imported (works in all deployment scenarios)
 start_daily_cash_out_scheduler()
+start_daily_digest_scheduler()
 
 
 if __name__ == '__main__':
