@@ -2,10 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for PostgreSQL
+# Install system dependencies for PostgreSQL and timezone data
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -19,4 +20,4 @@ COPY . .
 EXPOSE 8000
 
 # Run the application
-CMD ["python", "app.py"]
+CMD ["python", "-u","app.py"]

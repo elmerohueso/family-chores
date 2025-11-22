@@ -14,9 +14,7 @@ A web application for managing family chores, points, and rewards using Python a
 - **Kid Permissions**: Granular control over what kids can do (record chores, redeem points, withdraw cash, view history)
 - **Automatic Daily Cash Out**: Configurable automatic conversion of points to cash at midnight
 - **Chore Cooldown Periods**: Prevent chores from being completed too frequently (daily, weekly, monthly)
-- **Email Notifications**: Receive email alerts for chore completions, point redemptions, and cash withdrawals
-- **System Logging**: Comprehensive audit log of all system events
-- **Login/Logout Tracking**: Monitor user authentication events and failed login attempts
+- **Email Notifications**: Receive immediate email alerts for chore completions, point redemptions, and cash withdrawals, plus optional daily digest summary
 - **Settings Management**: Configure system settings, manage chores list, and reset data
 - **CSV Import**: Bulk import chores from CSV files
 
@@ -31,7 +29,8 @@ A web application for managing family chores, points, and rewards using Python a
 - Redemptions are tracked in the transactions table
 
 #### Automatic Daily Cash Out
-- **Automatic Daily Cash Out**: When enabled, converts excess points to cash at midnight
+- **Automatic Daily Cash Out**: When enabled, converts excess points to cash at a configurable time (default: midnight) in local system time
+- **Cash Out Time**: Configure the time when daily cash out runs (default: midnight)
 - **Max Rollover Points**: Maximum points to keep in point balance (default: 4)
 - Conversion rate: 5 points = $1
 
@@ -49,18 +48,12 @@ A web application for managing family chores, points, and rewards using Python a
 
 #### Email Notifications
 - Configure SMTP settings for email alerts
-- Receive notifications for chore completions, point redemptions, and cash withdrawals
+- Receive immediate notifications for chore completions, point redemptions, and cash withdrawals
+- **Daily Digest**: Receive a daily summary email at midnight with today's transaction history and current balances for all users
 - Support for multiple parent email addresses
 - Encrypted password storage for SMTP authentication
 - Test email functionality to verify configuration
-
-#### System Logging
-- Comprehensive audit log of all system events
-- Tracks user actions (chores, users, transactions, settings)
-- Records login/logout events and failed login attempts
-- Logs email sends, errors, and cash out operations
-- Searchable, filterable, and sortable log viewer
-- Tracks both manual and automatic operations
+- Manual daily digest send button for testing
 
 ## User Roles
 Parents have full control over what kids can access through granular permission settings.
@@ -163,6 +156,8 @@ The pre-built images in `docker-compose.yml` automatically pull the correct arch
 - `POSTGRES_USER` - Database user (default: `family_chores`)
 - `POSTGRES_PASSWORD` - Database password (default: `family_chores`)
 - `PARENT_PIN` - PIN required for Parent login (default: `1234`)
+- `TZ` - Set to your local timezone (default: `America/Denver`)
+- `LOG_LEVEL` - Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`)
 
 #### Volumes
 - `db_data`: PostgreSQL data directory

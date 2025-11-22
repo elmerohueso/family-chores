@@ -15,12 +15,24 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
 from cryptography.fernet import Fernet
 import base64
+import logging
+
+# Configure logging
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+logger.info("Application starting")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '0.9.8'
+__version__ = '1.0.0'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -91,90 +103,48 @@ def get_db_connection():
     conn = psycopg2.connect(DATABASE_URL)
     return conn
 
-def get_client_ip():
-    """Get client IP address from request, handling proxies and direct connections.
-    
-    Returns the actual browser client IP address accessing the web app.
-    - If behind a proxy, checks X-Forwarded-For header (leftmost IP is original client)
-    - If X-Real-IP is set by a trusted proxy, uses that
-    - Falls back to request.remote_addr for direct connections
-    """
-    if not has_request_context():
-        return 'system'  # No request context (e.g., background threads)
-    
-    try:
-        # X-Forwarded-For: Format is "client, proxy1, proxy2"
-        # The leftmost (first) IP is the original client IP
-        x_forwarded_for = request.headers.get('X-Forwarded-For')
-        if x_forwarded_for:
-            # Take the first IP (original client)
-            ip = x_forwarded_for.split(',')[0].strip()
-            if ip:
-                return ip
-        
-        # X-Real-IP: Set by trusted proxy (e.g., nginx)
-        x_real_ip = request.headers.get('X-Real-IP')
-        if x_real_ip:
-            ip = x_real_ip.strip()
-            if ip:
-                return ip
-        
-        # Fall back to remote_addr for direct connections (no proxy)
-        # This will be the browser's IP when connecting directly
-        if request.remote_addr:
-            return request.remote_addr
-        
-        return 'unknown'
-    except Exception:
-        # If anything fails, try to get remote_addr as fallback
-        try:
-            return request.remote_addr if request.remote_addr else 'unknown'
-        except Exception:
-            return 'unknown'
-
-def log_system_event(log_type, message, details=None, status='success', ip_address=None):
-    """Log a system event to the system_log table.
+def log_system_event(log_type, message, details=None, status='success'):
+    """Log a system event using the logging module.
     
     Args:
         log_type: Type of event (e.g., 'settings_saved', 'email_sent', 'cash_out_run', 'error')
         message: Brief message describing the event
         details: Optional detailed information (JSON string or dict)
         status: 'success' or 'error'
-        ip_address: Optional IP address (if None, will try to get from request context)
     """
     try:
-        # Get IP address if not provided
-        if ip_address is None:
-            try:
-                ip_address = get_client_ip()
-            except Exception:
-                ip_address = 'unknown'
+        # Format details if provided
+        details_str = ''
+        if details:
+            if isinstance(details, dict):
+                import json
+                details_str = f" | Details: {json.dumps(details)}"
+            else:
+                details_str = f" | Details: {details}"
         
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Determine log level based on status and log_type
+        if status == 'error' or 'error' in log_type.lower() or 'failed' in message.lower():
+            log_level = logging.ERROR
+        elif 'warning' in log_type.lower() or 'warning' in message.lower():
+            log_level = logging.WARNING
+        elif log_type in ['cash_out_check', 'login', 'logout']:
+            # Routine checks and auth events are DEBUG level
+            log_level = logging.DEBUG
+        else:
+            # Most other events are INFO level
+            log_level = logging.INFO
         
-        # Convert details to string if it's a dict
-        if details and isinstance(details, dict):
-            import json
-            details = json.dumps(details)
-        elif details is None:
-            details = ''
-        
-        # Store timestamp in local system time
-        # Get current time in local system timezone as naive datetime (PostgreSQL TIMESTAMP doesn't store timezone)
-        now_local = datetime.now().replace(tzinfo=None)  # Naive datetime in local system time
-        
-        cursor.execute('''
-            INSERT INTO system_log (timestamp, log_type, message, details, status, ip_address)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (now_local, log_type, message, details, status, ip_address))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
+        # Log the message
+        full_message = f"[{log_type}] {message}{details_str}"
+        logger.log(log_level, full_message)
     except Exception as e:
-        # Silently fail to avoid breaking main functionality
-        print(f"Error logging system event: {e}")
+        # Fallback to error logging if formatting fails
+        logger.error(f"System event formatting error: {log_type} - {message} (Error: {e})")
+
+def get_local_timezone():
+    """Get the local system timezone."""
+    # Get local timezone by converting UTC to local
+    return datetime.now(timezone.utc).astimezone().tzinfo
 
 def get_system_timestamp():
     """Get current timestamp in system timezone as ISO format string."""
@@ -185,6 +155,25 @@ def get_system_timestamp():
     now_local = now_utc.astimezone()
     # Return as ISO format string with timezone offset
     return now_local.isoformat()
+
+def make_timezone_aware(dt):
+    """Convert a naive datetime to timezone-aware datetime in local system timezone.
+    
+    Args:
+        dt: datetime object (naive or timezone-aware)
+    
+    Returns:
+        timezone-aware datetime in local system timezone
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        # Naive datetime - assume it's in local system time
+        local_tz = get_local_timezone()
+        return dt.replace(tzinfo=local_tz)
+    else:
+        # Already timezone-aware, convert to local timezone
+        return dt.astimezone()
 
 def parent_required(f):
     """Decorator to require parent role."""
@@ -257,8 +246,7 @@ def validate_pin():
         
         # Log successful parent login
         try:
-            ip_address = get_client_ip()
-            log_system_event('login', 'Parent logged in successfully', {'role': 'parent'}, 'success', ip_address)
+            log_system_event('login', 'Parent logged in successfully', {'role': 'parent'}, 'success')
         except Exception:
             pass  # Don't fail if logging fails
         
@@ -266,8 +254,7 @@ def validate_pin():
     else:
         # Log failed parent login attempt
         try:
-            ip_address = get_client_ip()
-            log_system_event('login_failed', 'Failed parent login attempt', {'role': 'parent', 'reason': 'Invalid PIN'}, 'error', ip_address)
+            log_system_event('login_failed', 'Failed parent login attempt', {'role': 'parent', 'reason': 'Invalid PIN'}, 'error')
         except Exception:
             pass  # Don't fail if logging fails
         
@@ -286,8 +273,7 @@ def set_role():
         
         # Log logout event
         try:
-            ip_address = get_client_ip()
-            log_system_event('logout', 'User logged out', {'role': old_role if old_role else 'unknown'}, 'success', ip_address)
+            log_system_event('logout', 'User logged out', {'role': old_role if old_role else 'unknown'}, 'success')
         except Exception:
             pass  # Don't fail if logging fails
         
@@ -297,8 +283,7 @@ def set_role():
         
         # Log successful login
         try:
-            ip_address = get_client_ip()
-            log_system_event('login', f'{role.capitalize()} logged in successfully', {'role': role}, 'success', ip_address)
+            log_system_event('login', f'{role.capitalize()} logged in successfully', {'role': role}, 'success')
         except Exception:
             pass  # Don't fail if logging fails
         
@@ -306,8 +291,7 @@ def set_role():
     else:
         # Log failed login attempt (invalid role)
         try:
-            ip_address = get_client_ip()
-            log_system_event('login_failed', 'Failed login attempt', {'role': role, 'reason': 'Invalid role'}, 'error', ip_address)
+            log_system_event('login_failed', 'Failed login attempt', {'role': role, 'reason': 'Invalid role'}, 'error')
         except Exception:
             pass  # Don't fail if logging fails
         
@@ -325,6 +309,24 @@ def get_version():
     return jsonify({
         'version': __version__,
         'github_url': GITHUB_REPO_URL
+    }), 200
+
+@app.route('/api/system-time', methods=['GET'])
+def get_system_time():
+    """Get current server time in server's local timezone (set via TZ)."""
+    # Get current time in server's local timezone
+    now = datetime.now()
+    # Convert to timezone-aware and get ISO format with timezone
+    now_aware = make_timezone_aware(now)
+    iso_timestamp = now_aware.isoformat()
+    
+    return jsonify({
+        'time': now.strftime('%H:%M:%S'),
+        'hour': now.hour,
+        'minute': now.minute,
+        'second': now.second,
+        'timestamp': iso_timestamp,
+        'unix_ms': int(now_aware.timestamp() * 1000)  # Unix timestamp in milliseconds
     }), 200
 
 @app.route('/add-user')
@@ -695,7 +697,7 @@ def import_chores():
             imported += 1
         except Exception as e:
             errors += 1
-            print(f"Error importing chore: {e}")
+            logger.error(f"Error importing chore: {e}")
     
     try:
         conn.commit()
@@ -961,7 +963,20 @@ def get_transactions():
     transactions = cursor.fetchall()
     cursor.close()
     conn.close()
-    return jsonify([dict(transaction) for transaction in transactions])
+    
+    # Convert timestamps to ISO format with timezone info
+    transactions_list = []
+    for transaction in transactions:
+        transaction_dict = dict(transaction)
+        timestamp = transaction_dict.get('timestamp')
+        if timestamp:
+            # Timestamps are stored as naive datetimes in local system time
+            # Convert to timezone-aware and then to ISO format string
+            timestamp_aware = make_timezone_aware(timestamp)
+            transaction_dict['timestamp'] = timestamp_aware.isoformat()
+        transactions_list.append(transaction_dict)
+    
+    return jsonify(transactions_list)
 
 @app.route('/history')
 @kid_permission_required('kid_allowed_view_history')
@@ -1300,6 +1315,7 @@ def get_settings():
     # Convert string values to appropriate types
     result = {
         'automatic_daily_cash_out': settings_dict.get('automatic_daily_cash_out', '1') == '1',
+        'daily_cash_out_time': settings_dict.get('daily_cash_out_time', '00:00'),
         'max_rollover_points': int(settings_dict.get('max_rollover_points', '4')),
         'daily_cooldown_hours': int(settings_dict.get('daily_cooldown_hours', '12')),
         'weekly_cooldown_days': int(settings_dict.get('weekly_cooldown_days', '4')),
@@ -1316,6 +1332,7 @@ def get_settings():
         'email_notify_chore_completed': settings_dict.get('email_notify_chore_completed', '0') == '1',
         'email_notify_points_redeemed': settings_dict.get('email_notify_points_redeemed', '0') == '1',
         'email_notify_cash_withdrawn': settings_dict.get('email_notify_cash_withdrawn', '0') == '1',
+        'email_notify_daily_digest': settings_dict.get('email_notify_daily_digest', '0') == '1',
         'parent_email_addresses': settings_dict.get('parent_email_addresses', '')
     }
     
@@ -1350,6 +1367,32 @@ def update_settings():
             VALUES ('automatic_daily_cash_out', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
         ''', (value,))
+    
+    if 'daily_cash_out_time' in data:
+        time_value = data['daily_cash_out_time']
+        # Validate time format (HH:MM)
+        try:
+            time_parts = time_value.split(':')
+            if len(time_parts) != 2:
+                raise ValueError('Invalid time format')
+            hour = int(time_parts[0])
+            minute = int(time_parts[1])
+            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Time must be in 24-hour format (00:00 to 23:59)'}), 400
+            old_value = current_settings.get('daily_cash_out_time', '00:00')
+            if time_value != old_value:
+                changed_settings['daily_cash_out_time'] = {'old': old_value, 'new': time_value}
+            cursor.execute('''
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('daily_cash_out_time', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (time_value,))
+        except (ValueError, TypeError) as e:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Daily cash out time must be in HH:MM format (e.g., 00:00 for midnight)'}), 400
     
     if 'max_rollover_points' in data:
         try:
@@ -1567,6 +1610,17 @@ def update_settings():
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('email_notify_cash_withdrawn', %s)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (value,))
+    
+    if 'email_notify_daily_digest' in data:
+        value = '1' if data['email_notify_daily_digest'] else '0'
+        old_value = current_settings.get('email_notify_daily_digest', '0')
+        if value != old_value:
+            changed_settings['email_notify_daily_digest'] = {'old': old_value == '1', 'new': data['email_notify_daily_digest']}
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('email_notify_daily_digest', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
         ''', (value,))
     
@@ -1924,6 +1978,18 @@ Sent from Family Chores application
     else:
         return jsonify({'error': f'Failed to send: {"; ".join(error_messages)}'}), 400
 
+@app.route('/api/send-daily-digest', methods=['POST'])
+@parent_required
+def send_daily_digest_manual():
+    """Manually trigger sending of daily digest email."""
+    try:
+        send_daily_digest_email(force=True)
+        return jsonify({'message': 'Daily digest email sent successfully'}), 200
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error manually sending daily digest: {error_msg}", exc_info=True)
+        return jsonify({'error': f'Error sending daily digest: {error_msg}'}), 500
+
 @app.route('/api/withdraw-cash', methods=['POST'])
 def withdraw_cash():
     """Withdraw cash from a user's cash balance."""
@@ -2032,6 +2098,8 @@ def get_setting(key, default):
             return result.get('setting_value') == '1'
         elif key == 'max_rollover_points':
             return int(result.get('setting_value'))
+        elif key == 'daily_cash_out_time':
+            return result.get('setting_value', default)
         return result.get('setting_value')
     return default
 
@@ -2114,7 +2182,7 @@ def process_daily_cash_out(triggered_manually=False):
     except Exception:
         pass  # Don't fail if logging fails
     
-    print(f"Daily cash out processed at {datetime.now()}")
+    logger.info(f"Daily cash out processed at {datetime.now()}")
 
 def get_last_daily_cash_out_date():
     """Get the last date when daily cash out was processed from database."""
@@ -2130,9 +2198,7 @@ def get_last_daily_cash_out_date():
             return datetime.strptime(result['setting_value'], '%Y-%m-%d').date()
         return None
     except Exception as e:
-        print(f"Error getting last daily cash out date: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error getting last daily cash out date: {e}", exc_info=True)
         return None
 
 def set_last_daily_cash_out_date(date):
@@ -2151,18 +2217,25 @@ def set_last_daily_cash_out_date(date):
         cursor.close()
         conn.close()
     except Exception as e:
-        print(f"Error setting last daily cash out date: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error setting last daily cash out date: {e}", exc_info=True)
 
 def daily_cash_out_worker():
-    """Background worker that checks for midnight and processes daily cash out."""
-    print("Daily cash out worker thread started")
+    """Background worker that checks for midnight local system time and processes daily cash out."""
+    logger.debug("Daily cash out worker thread started")
+    # Log timezone info for debugging
+    try:
+        import time as time_module_for_tz
+        tz_offset = time_module_for_tz.timezone if hasattr(time_module_for_tz, 'timezone') else 0
+        logger.debug(f"Daily cash out worker using local system time (timezone offset: {tz_offset} seconds)")
+    except:
+        pass
     
     while True:
         try:
+            # Use local system time (datetime.now() without timezone returns local time)
             now = datetime.now()
             current_date = now.date()
+            current_time = now.time()
             
             # Get last processed date from database (persisted across restarts)
             last_processed_date = get_last_daily_cash_out_date()
@@ -2172,34 +2245,69 @@ def daily_cash_out_worker():
             process_date = current_date
             reason = ""
             
+            # Get configured cash out time (default to midnight)
+            cash_out_time_str = get_setting('daily_cash_out_time', '00:00')
+            try:
+                cash_out_hour, cash_out_minute = map(int, cash_out_time_str.split(':'))
+            except (ValueError, AttributeError):
+                # Fallback to midnight if parsing fails
+                cash_out_hour, cash_out_minute = 0, 0
+                logger.warning(f"Failed to parse cash out time '{cash_out_time_str}', using midnight (00:00)")
+            
             # Check if we need to process today
-            # Process if:
-            # 1. It's between 00:00 and 01:00 (wider window for reliability)
-            # 2. We haven't processed today yet
-            if now.hour == 0:
+            # Process at configured time (check if we're in the scheduled minute)
+            if now.hour == cash_out_hour and now.minute == cash_out_minute:
                 if last_processed_date != current_date:
                     should_process = True
-                    reason = f"Regular midnight processing for {current_date}"
-            # Recovery check: If it's early morning (1:00-1:05) and we missed yesterday, process it
-            elif now.hour == 1 and now.minute < 5:
-                yesterday = current_date - timedelta(days=1)
-                if last_processed_date != current_date and last_processed_date != yesterday:
+                    reason = f"Regular scheduled processing for {current_date} at {cash_out_time_str} (local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
+                    # Log the check
+                    try:
+                        log_system_event('cash_out_check', f'Cash out check at scheduled time {cash_out_time_str}', 
+                                        {'current_time': now.strftime('%Y-%m-%d %H:%M:%S'), 'scheduled_time': cash_out_time_str, 
+                                         'last_processed': str(last_processed_date), 'will_process': True}, 'success')
+                    except Exception:
+                        pass  # Don't fail if logging fails
+                else:
+                    # Already processed today - this can happen if time was changed after cash out already ran
+                    try:
+                        log_system_event('cash_out_check', f'Cash out check at scheduled time {cash_out_time_str} - already processed today', 
+                                        {'current_time': now.strftime('%Y-%m-%d %H:%M:%S'), 'scheduled_time': cash_out_time_str, 
+                                         'last_processed': str(last_processed_date), 'will_process': False}, 'success')
+                    except Exception:
+                        pass  # Don't fail if logging fails
+            # Recovery check: If it's within 10 minutes after scheduled time and we missed today, process it
+            elif now.hour == cash_out_hour and now.minute > cash_out_minute and now.minute <= cash_out_minute + 10:
+                if last_processed_date != current_date:
                     should_process = True
-                    process_date = yesterday
-                    reason = f"Recovery processing for {yesterday} (missed yesterday)"
+                    reason = f"Recovery processing for {current_date} (missed scheduled time {cash_out_time_str}, local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
+                    # Log recovery check (only once per recovery window)
+                    if now.minute == cash_out_minute + 1:
+                        try:
+                            log_system_event('cash_out_check', f'Cash out recovery check - missed scheduled time {cash_out_time_str}', 
+                                            {'current_time': now.strftime('%Y-%m-%d %H:%M:%S'), 'scheduled_time': cash_out_time_str, 
+                                             'last_processed': str(last_processed_date), 'will_process': True}, 'success')
+                        except Exception:
+                            pass  # Don't fail if logging fails
+                else:
+                    # Already processed today
+                    if now.minute == cash_out_minute + 1:  # Only log once per recovery window
+                        try:
+                            log_system_event('cash_out_check', f'Cash out recovery check - already processed today', 
+                                            {'current_time': now.strftime('%Y-%m-%d %H:%M:%S'), 'scheduled_time': cash_out_time_str, 
+                                             'last_processed': str(last_processed_date), 'will_process': False}, 'success')
+                        except Exception:
+                            pass  # Don't fail if logging fails
             
             if should_process:
-                print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')}: {reason}")
+                logger.info(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')} (local system time): {reason}")
                 try:
                     process_daily_cash_out()
                     # Store the date we just processed
                     set_last_daily_cash_out_date(process_date)
-                    print(f"Daily cash out completed for {process_date}")
+                    logger.info(f"Daily cash out completed for {process_date}")
                 except Exception as e:
                     error_msg = str(e)
-                    print(f"Error during daily cash out processing: {error_msg}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.error(f"Error during daily cash out processing: {error_msg}", exc_info=True)
                     
                     # Log cash out error
                     try:
@@ -2212,9 +2320,7 @@ def daily_cash_out_worker():
             time_module.sleep(60)
         except Exception as e:
             error_msg = str(e)
-            print(f"Error in daily cash out worker: {error_msg}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error in daily cash out worker: {error_msg}", exc_info=True)
             
             # Log worker error
             try:
@@ -2225,148 +2331,264 @@ def daily_cash_out_worker():
             
             time_module.sleep(60)
 
+def send_daily_digest_email(force=False):
+    """Generate and send daily digest email with today's history and current balances.
+    
+    Args:
+        force: If True, send email even if daily digest notification is disabled (for manual sends)
+    """
+    # Check if daily digest is enabled (unless forced)
+    if not force and not get_email_notification_setting('email_notify_daily_digest'):
+        return
+    
+    try:
+        # Get parent email addresses
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s, %s, %s, %s, %s)', 
+                      ('parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
+        results = cursor.fetchall()
+        settings_dict = {row['setting_key']: row['setting_value'] for row in results}
+        
+        parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
+        if not parent_emails_str:
+            cursor.close()
+            conn.close()
+            if force:
+                raise ValueError("No parent email addresses configured")
+            return
+        
+        parent_emails = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
+        if not parent_emails:
+            cursor.close()
+            conn.close()
+            if force:
+                raise ValueError("No parent email addresses configured")
+            return
+        
+        # Get today's date in local timezone
+        now = datetime.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        # Get all transactions for today
+        cursor.execute('''
+            SELECT 
+                t.transaction_id,
+                t.user_id,
+                t.description,
+                t.value,
+                t.transaction_type,
+                t.timestamp,
+                u.full_name as user_name
+            FROM transactions t
+            LEFT JOIN "user" u ON t.user_id = u.user_id
+            WHERE t.timestamp >= %s AND t.timestamp <= %s
+            ORDER BY t.timestamp DESC
+        ''', (today_start, today_end))
+        transactions = cursor.fetchall()
+        
+        # Get all users with their current balances
+        cursor.execute('''
+            SELECT 
+                u.user_id,
+                u.full_name,
+                u.balance as point_balance,
+                COALESCE(cb.cash_balance, 0.0) as cash_balance
+            FROM "user" u
+            LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
+            ORDER BY u.user_id
+        ''')
+        users = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        # Format transactions for email
+        transactions_html = ""
+        transactions_text = ""
+        if transactions:
+            for t in transactions:
+                transaction_type = t.get('transaction_type', '')
+                value = t.get('value', 0)
+                description = t.get('description', '')
+                user_name = t.get('user_name', 'Unknown')
+                timestamp = t.get('timestamp')
+                
+                if timestamp:
+                    timestamp_aware = make_timezone_aware(timestamp)
+                    time_str = timestamp_aware.strftime('%I:%M %p')
+                else:
+                    time_str = 'N/A'
+                
+                if transaction_type == 'chore_completed':
+                    type_label = "Chore Completed"
+                    value_display = f"+{value} points"
+                elif transaction_type == 'points_redemption':
+                    type_label = "Points Redeemed"
+                    value_display = f"-{abs(value)} points"
+                elif transaction_type == 'cash_withdrawal':
+                    type_label = "Cash Withdrawn"
+                    value_display = f"-${abs(value):.2f}"
+                else:
+                    type_label = "Transaction"
+                    if value >= 0:
+                        value_display = f"+{value} points"
+                    else:
+                        value_display = f"{value} points"
+                
+                transactions_html += f"""
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
+                </tr>
+                """
+                transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
+        else:
+            transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions today</td></tr>"
+            transactions_text = "No transactions today\n"
+        
+        # Format user balances
+        balances_html = ""
+        balances_text = ""
+        for user in users:
+            user_name = user.get('full_name', 'Unknown')
+            point_balance = user.get('point_balance', 0) or 0
+            cash_balance = user.get('cash_balance', 0) or 0
+            balances_html += f"""
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{point_balance} points</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${cash_balance:.2f}</td>
+            </tr>
+            """
+            balances_text += f"{user_name}: {point_balance} points, ${cash_balance:.2f}\n"
+        
+        # Generate email content
+        date_str = now.strftime('%B %d, %Y')
+        subject = f"Family Chores Daily Digest - {date_str}"
+        
+        body_html = f"""
+        <html>
+          <head></head>
+          <body>
+            <h2>Daily Digest - {date_str}</h2>
+            
+            <h3>Today's Activity</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <thead>
+                    <tr style="background-color: #f5f5f5;">
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
+                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {transactions_html}
+                </tbody>
+            </table>
+            
+            <h3>Current Balances</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <thead>
+                    <tr style="background-color: #f5f5f5;">
+                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
+                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Points</th>
+                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Cash</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {balances_html}
+                </tbody>
+            </table>
+            
+            <hr>
+            <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+          </body>
+        </html>
+        """
+        
+        body_text = f"""Daily Digest - {date_str}
+
+Today's Activity:
+{transactions_text}
+
+Current Balances:
+{balances_text}
+
+Sent from Family Chores application
+        """
+        
+        # Send email to all parent addresses
+        success_count = 0
+        error_messages = []
+        for email in parent_emails:
+            success, message = send_email(email, subject, body_html, body_text)
+            if success:
+                logger.info(f"Daily digest email sent to {email}")
+                success_count += 1
+            else:
+                logger.error(f"Failed to send daily digest email to {email}: {message}")
+                error_messages.append(f"{email}: {message}")
+        
+        # If forced (manual send), raise exception if all failed
+        if force and success_count == 0:
+            raise Exception(f"Failed to send daily digest to any address: {'; '.join(error_messages) if error_messages else 'Unknown error'}")
+    
+    except Exception as e:
+        logger.error(f"Error sending daily digest email: {e}", exc_info=True)
+
+def daily_digest_worker():
+    """Background worker that sends daily digest email at midnight."""
+    logger.debug("Daily digest worker thread started")
+    
+    while True:
+        try:
+            # Get current time in local system timezone
+            now = datetime.now()
+            current_date = now.date()
+            
+            # Check if it's midnight (00:00)
+            if now.hour == 0 and now.minute == 0:
+                logger.info(f"Sending daily digest email for {current_date}")
+                send_daily_digest_email()
+                # Sleep for 1 minute to avoid sending multiple times in the same minute
+                time_module.sleep(60)
+            else:
+                # Sleep for 1 minute and check again
+                time_module.sleep(60)
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error in daily digest worker: {error_msg}", exc_info=True)
+            time_module.sleep(60)
+
 def start_daily_cash_out_scheduler():
     """Start the background thread for daily cash out."""
     try:
         thread = threading.Thread(target=daily_cash_out_worker, daemon=True, name="DailyCashOutWorker")
         thread.start()
-        print("Daily cash out scheduler started successfully")
+        logger.info("Daily cash out scheduler started successfully")
     except Exception as e:
-        print(f"Failed to start daily cash out scheduler: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Failed to start daily cash out scheduler: {e}", exc_info=True)
 
-# Start the scheduler when module is imported (works in all deployment scenarios)
-start_daily_cash_out_scheduler()
-
-# System log routes
-@app.route('/system-log')
-@parent_required
-def system_log_page():
-    """Page to view system logs."""
-    return render_template('system_log.html')
-
-@app.route('/api/system-log', methods=['GET'])
-@parent_required
-def get_system_logs():
-    """Get system logs with optional filtering, sorting, and searching."""
+def start_daily_digest_scheduler():
+    """Start the background thread for daily digest emails."""
     try:
-        # Get query parameters
-        log_type = request.args.get('log_type', '')
-        status = request.args.get('status', '')
-        search = request.args.get('search', '')
-        sort_by = request.args.get('sort_by', 'timestamp')
-        sort_order = request.args.get('sort_order', 'desc')
-        limit = request.args.get('limit', '100')
-        offset = request.args.get('offset', '0')
-        
-        # Validate sort_by to prevent SQL injection
-        allowed_sort_columns = ['timestamp', 'log_type', 'message', 'status']
-        if sort_by not in allowed_sort_columns:
-            sort_by = 'timestamp'
-        
-        # Validate sort_order
-        if sort_order not in ['asc', 'desc']:
-            sort_order = 'desc'
-        
-        # Validate limit and offset
-        try:
-            limit_int = int(limit)
-            offset_int = int(offset)
-            if limit_int < 1 or limit_int > 1000:
-                limit_int = 100
-            if offset_int < 0:
-                offset_int = 0
-        except (ValueError, TypeError):
-            limit_int = 100
-            offset_int = 0
-        
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Build query with filters
-        where_clauses = []
-        params = []
-        
-        if log_type:
-            where_clauses.append('log_type = %s')
-            params.append(log_type)
-        
-        if status:
-            where_clauses.append('status = %s')
-            params.append(status)
-        
-        if search:
-            where_clauses.append('(message ILIKE %s OR details ILIKE %s)')
-            search_pattern = f'%{search}%'
-            params.append(search_pattern)
-            params.append(search_pattern)
-        
-        where_clause = ' AND '.join(where_clauses) if where_clauses else '1=1'
-        
-        # Build query
-        query = f'''
-            SELECT log_id, timestamp, log_type, message, details, status, ip_address
-            FROM system_log
-            WHERE {where_clause}
-            ORDER BY {sort_by} {sort_order.upper()}
-            LIMIT %s OFFSET %s
-        '''
-        params.extend([limit_int, offset_int])
-        
-        cursor.execute(query, params)
-        logs = cursor.fetchall()
-        
-        # Get total count for pagination
-        count_query = f'SELECT COUNT(*) as total FROM system_log WHERE {where_clause}'
-        cursor.execute(count_query, params[:-2])  # Remove limit and offset from count query
-        total_result = cursor.fetchone()
-        total = total_result['total'] if total_result else 0
-        
-        cursor.close()
-        conn.close()
-        
-        # Convert logs to dict format
-        # Ensure timestamps are displayed in local system time
-        logs_list = []
-        for log in logs:
-            timestamp = log['timestamp']
-            if timestamp:
-                # Timestamps are stored as naive datetimes in local system time
-                # Convert to ISO format string - if naive, assume it's already in local time
-                if timestamp.tzinfo is None:
-                    # Naive datetime - assume it's in local system time
-                    # Convert to timezone-aware for proper ISO formatting
-                    # Get local timezone offset
-                    local_tz = datetime.now(timezone.utc).astimezone().tzinfo
-                    timestamp_aware = timestamp.replace(tzinfo=local_tz)
-                    timestamp_str = timestamp_aware.isoformat()
-                else:
-                    # Already timezone-aware, ensure it's in local time
-                    timestamp_local = timestamp.astimezone()
-                    timestamp_str = timestamp_local.isoformat()
-            else:
-                timestamp_str = None
-            
-            logs_list.append({
-                'log_id': log['log_id'],
-                'timestamp': timestamp_str,
-                'log_type': log['log_type'],
-                'message': log['message'],
-                'details': log['details'],
-                'status': log['status'],
-                'ip_address': log.get('ip_address', None)
-            })
-        
-        return jsonify({
-            'logs': logs_list,
-            'total': total,
-            'limit': limit_int,
-            'offset': offset_int
-        }), 200
-        
+        thread = threading.Thread(target=daily_digest_worker, daemon=True, name="DailyDigestWorker")
+        thread.start()
+        logger.info("Daily digest scheduler started successfully")
     except Exception as e:
-        return jsonify({'error': f'Error fetching system logs: {str(e)}'}), 500
+        logger.error(f"Failed to start daily digest scheduler: {e}", exc_info=True)
+
+# Start the schedulers when module is imported (works in all deployment scenarios)
+start_daily_cash_out_scheduler()
+start_daily_digest_scheduler()
+
 
 if __name__ == '__main__':
     # Ensure database is initialized
@@ -2374,7 +2596,7 @@ if __name__ == '__main__':
     try:
         init_database()
     except Exception as e:
-        print(f"Note: Database initialization check failed (this is OK if tables already exist): {e}")
+        logger.info(f"Database initialization check failed (this is OK if tables already exist): {e}")
     
     app.run(host='0.0.0.0', port=8000, debug=True)
 

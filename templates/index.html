@@ -1056,11 +1056,69 @@
             }
         });
 
-        function updateSystemTime() {
-            const now = new Date();
-            const hours = now.getHours();
-            const minutes = now.getMinutes();
-            const seconds = now.getSeconds();
+        let serverTimeBase = null; // Base server time components [hours, minutes, seconds] when last synced
+        let serverTimeBaseMs = 0; // Browser time (ms) when we last synced
+        
+        async function syncServerTime() {
+            try {
+                const response = await fetch('/api/system-time');
+                const data = await response.json();
+                
+                // Parse the ISO timestamp string directly to get server time components
+                // Format: "2024-01-15T12:30:00-07:00" or "2024-01-15T12:30:00"
+                const timestamp = data.timestamp;
+                const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+                
+                if (match) {
+                    const hours = parseInt(match[4]);
+                    const minutes = parseInt(match[5]);
+                    const seconds = parseInt(match[6]);
+                    
+                    serverTimeBase = [hours, minutes, seconds];
+                    serverTimeBaseMs = Date.now();
+                }
+                
+                // Update display immediately
+                updateSystemTimeDisplay();
+            } catch (error) {
+                console.error('Error syncing server time:', error);
+                // On error, fallback to browser time
+                serverTimeBase = null;
+            }
+        }
+        
+        function updateSystemTimeDisplay() {
+            if (!serverTimeBase) {
+                // Fallback to browser time if not synced yet
+                const now = new Date();
+                const hours = now.getHours();
+                const minutes = now.getMinutes();
+                const seconds = now.getSeconds();
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                const displayHours = hours % 12 || 12;
+                const displayMinutes = minutes.toString().padStart(2, '0');
+                const displaySeconds = seconds.toString().padStart(2, '0');
+                const timeString = `${displayHours}:${displayMinutes}:${displaySeconds} ${ampm}`;
+                document.getElementById('systemTimeInfo').textContent = timeString;
+                return;
+            }
+            
+            // Calculate elapsed time since last sync
+            const elapsedMs = Date.now() - serverTimeBaseMs;
+            const elapsedSeconds = Math.floor(elapsedMs / 1000);
+            
+            // Add elapsed time to base server time
+            let [hours, minutes, seconds] = serverTimeBase;
+            seconds += elapsedSeconds;
+            
+            // Handle overflow
+            minutes += Math.floor(seconds / 60);
+            seconds = seconds % 60;
+            hours += Math.floor(minutes / 60);
+            minutes = minutes % 60;
+            hours = hours % 24;
+            
+            // Format and display
             const ampm = hours >= 12 ? 'PM' : 'AM';
             const displayHours = hours % 12 || 12;
             const displayMinutes = minutes.toString().padStart(2, '0');
@@ -1070,9 +1128,12 @@
             document.getElementById('systemTimeInfo').textContent = timeString;
         }
 
-        // Update system time every second
-        updateSystemTime();
-        setInterval(updateSystemTime, 1000);
+        // Sync with server on load and every 30 minutes to prevent drift
+        syncServerTime();
+        setInterval(syncServerTime, 30 * 60 * 1000); // Sync every 30 minutes
+        
+        // Update display every second
+        setInterval(updateSystemTimeDisplay, 1000);
 
         // Load app version and GitHub link
         async function loadAppFooter() {
