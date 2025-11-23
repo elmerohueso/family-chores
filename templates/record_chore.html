@@ -660,11 +660,22 @@
             chores.forEach(chore => {
                 const item = document.createElement('div');
                 const onCooldown = isChoreOnCooldown(chore);
-                item.className = onCooldown ? 'searchable-dropdown-item disabled' : 'searchable-dropdown-item';
+                const requiresApproval = chore.requires_approval && userRole === 'kid';
+                const isDisabled = onCooldown || requiresApproval;
+                
+                item.className = isDisabled ? 'searchable-dropdown-item disabled' : 'searchable-dropdown-item';
                 item.dataset.choreId = chore.chore_id;
                 item.dataset.pointValue = chore.point_value;
-                item.textContent = `${chore.chore} (${chore.point_value} points)${onCooldown ? ' - On Cooldown' : ''}`;
-                if (!onCooldown) {
+                
+                let text = `${chore.chore} (${chore.point_value} points)`;
+                if (onCooldown) {
+                    text += ' - On Cooldown';
+                } else if (requiresApproval) {
+                    text += ' - Requires parental approval';
+                }
+                item.textContent = text;
+                
+                if (!isDisabled) {
                     item.addEventListener('click', () => selectChore(chore));
                 }
                 dropdown.appendChild(item);
@@ -674,6 +685,12 @@
         function selectChore(chore) {
             // Prevent selecting chores on cooldown
             if (isChoreOnCooldown(chore)) {
+                return;
+            }
+            
+            // Prevent kids from selecting chores that require approval
+            if (chore.requires_approval && userRole === 'kid') {
+                showMessage('This chore requires parental approval and cannot be selected.', true);
                 return;
             }
             
@@ -827,6 +844,13 @@
             const selectedChoreObj = chores.find(c => c.chore_id == data.chore_id);
             if (selectedChoreObj && isChoreOnCooldown(selectedChoreObj)) {
                 showMessage('This chore is on cooldown and cannot be recorded yet.', true);
+                submitBtn.disabled = false;
+                return;
+            }
+            
+            // Check if selected chore requires approval (for kids)
+            if (selectedChoreObj && selectedChoreObj.requires_approval && userRole === 'kid') {
+                showMessage('This chore requires parental approval and cannot be recorded.', true);
                 submitBtn.disabled = false;
                 return;
             }

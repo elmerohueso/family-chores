@@ -373,7 +373,7 @@ def withdraw_cash_page():
 # Chores endpoints
 @app.route('/api/chores', methods=['GET'])
 def get_chores():
-    """Get all chores."""
+    """Get all chores. All chores are visible, but those with requires_approval=True are greyed out for kids."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute('SELECT * FROM chores')
@@ -463,7 +463,7 @@ def update_chore(chore_id):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     # Get current chore values for comparison
-    cursor.execute('SELECT chore, point_value, "repeat" FROM chores WHERE chore_id = %s', (chore_id,))
+    cursor.execute('SELECT chore, point_value, "repeat", requires_approval FROM chores WHERE chore_id = %s', (chore_id,))
     chore_result = cursor.fetchone()
     if not chore_result:
         cursor.close()
@@ -479,6 +479,7 @@ def update_chore(chore_id):
     old_chore_name = chore_result['chore']
     old_point_value = chore_result.get('point_value')
     old_repeat = chore_result.get('repeat')
+    old_requires_approval = chore_result.get('requires_approval', False)
     
     # Track changed fields for logging (with old and new values)
     changed_fields = {}
@@ -513,6 +514,15 @@ def update_chore(chore_id):
                 changed_fields['repeat'] = {'old': old_repeat_normalized, 'new': repeat_value}
             updates.append('"repeat" = %s')
             params.append(repeat_value)
+        
+        if 'requires_approval' in data:
+            requires_approval = data.get('requires_approval', False)
+            if isinstance(requires_approval, str):
+                requires_approval = requires_approval.lower() in ('true', '1', 'yes')
+            if requires_approval != old_requires_approval:
+                changed_fields['requires_approval'] = {'old': old_requires_approval, 'new': requires_approval}
+            updates.append('requires_approval = %s')
+            params.append(requires_approval)
         
         if not updates:
             cursor.close()
@@ -609,13 +619,18 @@ def create_chore():
         # Key not provided, default to 'as_needed'
         repeat_value = 'as_needed'
     
+    # Handle requires_approval field (default to False if not provided)
+    requires_approval = data.get('requires_approval', False)
+    if isinstance(requires_approval, str):
+        requires_approval = requires_approval.lower() in ('true', '1', 'yes')
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
         cursor.execute(
-            'INSERT INTO chores (chore, point_value, "repeat") VALUES (%s, %s, %s) RETURNING chore_id',
-            (data['chore'], point_value, repeat_value)
+            'INSERT INTO chores (chore, point_value, "repeat", requires_approval) VALUES (%s, %s, %s, %s) RETURNING chore_id',
+            (data['chore'], point_value, repeat_value, requires_approval)
         )
         chore_id = cursor.fetchone()[0]
         conn.commit()

@@ -395,6 +395,10 @@
                                 Repeat
                                 <span class="sort-indicator" id="sort-repeat"></span>
                             </th>
+                            <th onclick="sortTable('requires_approval')">
+                                Requires Parental Approval
+                                <span class="sort-indicator" id="sort-requires_approval"></span>
+                            </th>
                             <th onclick="sortTable('last_completed')">
                                 Last Completed
                                 <span class="sort-indicator" id="sort-last_completed"></span>
@@ -581,6 +585,10 @@
                         // Handle date sorting for last_completed
                         aVal = aVal ? new Date(aVal).getTime() : 0;
                         bVal = bVal ? new Date(bVal).getTime() : 0;
+                    } else if (sortColumn === 'requires_approval') {
+                        // Handle boolean sorting for requires_approval
+                        aVal = aVal ? 1 : 0;
+                        bVal = bVal ? 1 : 0;
                     } else {
                         aVal = String(aVal).toLowerCase();
                         bVal = String(bVal).toLowerCase();
@@ -627,6 +635,9 @@
                         </td>
                         <td>
                             <span class="repeat-badge ${repeatClass}">${escapeHtml(repeatText)}</span>
+                        </td>
+                        <td>
+                            ${chore.requires_approval ? '✓' : '✗'}
                         </td>
                         <td class="last-completed">
                             ${escapeHtml(lastCompleted)}
