@@ -506,6 +506,8 @@
     <script>
         let users = [];
         let chores = [];
+        let userRole = null;
+        let selectedChore = null;
 
         function showMessage(text, isError = false) {
             const messageDiv = document.getElementById('message');
@@ -599,7 +601,6 @@
             }
         }
 
-        let selectedChore = null;
         let cooldownSettings = {
             daily_cooldown_hours: 12,
             weekly_cooldown_days: 4,
@@ -659,11 +660,22 @@
             chores.forEach(chore => {
                 const item = document.createElement('div');
                 const onCooldown = isChoreOnCooldown(chore);
-                item.className = onCooldown ? 'searchable-dropdown-item disabled' : 'searchable-dropdown-item';
+                const requiresApproval = chore.requires_approval && userRole === 'kid';
+                const isDisabled = onCooldown || requiresApproval;
+                
+                item.className = isDisabled ? 'searchable-dropdown-item disabled' : 'searchable-dropdown-item';
                 item.dataset.choreId = chore.chore_id;
                 item.dataset.pointValue = chore.point_value;
-                item.textContent = `${chore.chore} (${chore.point_value} points)${onCooldown ? ' - On Cooldown' : ''}`;
-                if (!onCooldown) {
+                
+                let text = `${chore.chore} (${chore.point_value} points)`;
+                if (onCooldown) {
+                    text += ' - On Cooldown';
+                } else if (requiresApproval) {
+                    text += ' - Requires parental approval';
+                }
+                item.textContent = text;
+                
+                if (!isDisabled) {
                     item.addEventListener('click', () => selectChore(chore));
                 }
                 dropdown.appendChild(item);
@@ -673,6 +685,12 @@
         function selectChore(chore) {
             // Prevent selecting chores on cooldown
             if (isChoreOnCooldown(chore)) {
+                return;
+            }
+            
+            // Prevent kids from selecting chores that require approval
+            if (chore.requires_approval && userRole === 'kid') {
+                showMessage('This chore requires parental approval and cannot be selected.', true);
                 return;
             }
             
@@ -740,7 +758,14 @@
         // Update point value when chore is selected (handled in selectChore function)
 
         // Update point preview when value changes
-        document.getElementById('value').addEventListener('input', updatePointPreview);
+        // For kids, prevent any changes to the point value
+        document.getElementById('value').addEventListener('input', (e) => {
+            if (userRole === 'kid' && selectedChore) {
+                // Restore the point value from the selected chore
+                e.target.value = selectedChore.point_value;
+            }
+            updatePointPreview();
+        });
 
         function updatePointPreview() {
             const value = document.getElementById('value').value;
@@ -775,10 +800,32 @@
             submitBtn.disabled = true;
 
             const formData = new FormData(e.target);
+            // Get value directly from input element (disabled inputs aren't included in FormData)
+            const valueInput = document.getElementById('value');
+            let pointValue = valueInput.value ? parseInt(valueInput.value) : null;
+            
+            // For kids, if value is missing or invalid, use the selected chore's point value
+            if (userRole === 'kid') {
+                if (!pointValue || isNaN(pointValue)) {
+                    const choreId = formData.get('chore_id') ? parseInt(formData.get('chore_id')) : null;
+                    if (choreId) {
+                        const choreObj = chores.find(c => c.chore_id == choreId);
+                        if (choreObj) {
+                            pointValue = choreObj.point_value;
+                            // Also update the input field to show the correct value
+                            valueInput.value = pointValue;
+                        }
+                    } else if (selectedChore) {
+                        pointValue = selectedChore.point_value;
+                        valueInput.value = pointValue;
+                    }
+                }
+            }
+            
             const data = {
                 user_id: parseInt(formData.get('user_id')),
                 chore_id: formData.get('chore_id') ? parseInt(formData.get('chore_id')) : null,
-                value: parseInt(formData.get('value'))
+                value: pointValue
             };
 
             if (!data.user_id) {
@@ -797,6 +844,13 @@
             const selectedChoreObj = chores.find(c => c.chore_id == data.chore_id);
             if (selectedChoreObj && isChoreOnCooldown(selectedChoreObj)) {
                 showMessage('This chore is on cooldown and cannot be recorded yet.', true);
+                submitBtn.disabled = false;
+                return;
+            }
+            
+            // Check if selected chore requires approval (for kids)
+            if (selectedChoreObj && selectedChoreObj.requires_approval && userRole === 'kid') {
+                showMessage('This chore requires parental approval and cannot be recorded.', true);
                 submitBtn.disabled = false;
                 return;
             }
@@ -854,11 +908,13 @@
                 
                 // Parents always have access
                 if (role === 'parent') {
+                    userRole = 'parent';
                     return;
                 }
                 
                 // Kids need permission check
                 if (role === 'kid') {
+                    userRole = 'kid';
                     try {
                         const settingsResponse = await fetch('/api/settings');
                         const settings = await settingsResponse.json();
@@ -867,12 +923,26 @@
                             window.location.href = '/';
                             return;
                         }
+                        
+                        // Disable point value editing for kids
+                        const pointValueInput = document.getElementById('value');
+                        pointValueInput.disabled = true;
+                        pointValueInput.readOnly = true;
+                        pointValueInput.style.backgroundColor = '#f5f5f5';
+                        pointValueInput.style.cursor = 'not-allowed';
+                        
+                        // Update help text to indicate point value cannot be changed
+                        const helpText = pointValueInput.nextElementSibling;
+                        if (helpText && helpText.classList.contains('help-text')) {
+                            helpText.textContent = 'Point value is set automatically from the selected chore and cannot be changed';
+                        }
                     } catch (error) {
                         console.error('Error loading settings:', error);
                         window.location.href = '/';
                         return;
                     }
                 } else {
+                    userRole = role;
                     // No role set - redirect to home
                     window.location.href = '/';
                 }

@@ -197,6 +197,39 @@
             display: block;
         }
 
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 10000;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            max-width: 400px;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .toast.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
         .button-group {
             display: flex;
             gap: 12px;
@@ -991,6 +1024,10 @@
                                                 Repeat
                                                 <span class="sort-indicator" id="sort-repeat-chores"></span>
                                             </th>
+                                            <th onclick="sortChoresTable('requires_approval')">
+                                                Requires Parental Approval
+                                                <span class="sort-indicator" id="sort-requires_approval-chores"></span>
+                                            </th>
                                             <th style="width: 60px; text-align: center;">Actions</th>
                                         </tr>
                                     </thead>
@@ -1089,6 +1126,33 @@
             setTimeout(() => {
                 messageDiv.style.display = 'none';
             }, 5000);
+        }
+
+        function showToast(text, isError = false) {
+            // Remove any existing toast
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) {
+                existingToast.remove();
+            }
+
+            // Create new toast
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'error' : 'success'}`;
+            toast.textContent = text;
+            document.body.appendChild(toast);
+
+            // Trigger animation
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+
+            // Remove toast after 3 seconds
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3000);
         }
 
         function resetForm() {
@@ -1290,11 +1354,11 @@
                     const result = await response.json();
 
                     if (response.ok) {
-                        showMessage('Chore deleted successfully!');
+                        showToast('Chore deleted successfully!');
                         // Reload chores to update the list
                         await loadChores();
                     } else {
-                        showMessage(result.error || 'Error deleting chore', true);
+                        showToast(result.error || 'Error deleting chore', true);
                     }
                 } catch (error) {
                     showMessage('Network error. Please try again.', true);
@@ -1494,6 +1558,11 @@
                                     <button class="btn-cancel" onclick="cancelChoreEdit()">Cancel</button>
                                 </div>
                             </td>
+                            <td>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="edit-requires-${chore.chore_id}" ${chore.requires_approval ? 'checked' : ''} />
+                                    
+                            </td>
                             <td style="text-align: center;">
                                 <button class="btn-delete" onclick="event.stopPropagation(); confirmDeleteChore(${chore.chore_id}, '${escapeHtml(chore.chore)}')" title="Delete chore">✕</button>
                             </td>
@@ -1511,6 +1580,9 @@
                         </td>
                         <td class="editable" onclick="startChoreEdit(${chore.chore_id}, 'repeat')">
                             <span class="repeat-badge ${repeatClass}">${escapeHtml(repeatText)}</span>
+                        </td>
+                        <td class="editable" onclick="startChoreEdit(${chore.chore_id}, 'requires_approval')">
+                            ${chore.requires_approval ? '✓' : '✗'}
                         </td>
                         <td style="text-align: center;">
                             <button class="btn-delete" onclick="event.stopPropagation(); confirmDeleteChore(${chore.chore_id}, '${escapeHtml(chore.chore)}')" title="Delete chore">✕</button>
@@ -1534,6 +1606,8 @@
                 document.getElementById(`edit-point-${choreId}`)?.focus();
             } else if (field === 'repeat') {
                 document.getElementById(`edit-repeat-${choreId}`)?.focus();
+            } else if (field === 'requires_approval') {
+                document.getElementById(`edit-requires-${choreId}`)?.focus();
             }
         }
 
@@ -1546,6 +1620,7 @@
             const choreInput = document.getElementById(`edit-chore-${choreId}`);
             const pointInput = document.getElementById(`edit-point-${choreId}`);
             const repeatSelect = document.getElementById(`edit-repeat-${choreId}`);
+            const requiresApprovalCheckbox = document.getElementById(`edit-requires-${choreId}`);
 
             if (!choreInput || !pointInput || !repeatSelect) {
                 showMessage('Error: Could not find edit fields', true);
@@ -1555,6 +1630,7 @@
             const chore = choreInput.value.trim();
             const pointValue = parseInt(pointInput.value);
             const repeat = repeatSelect.value;
+            const requiresApproval = requiresApprovalCheckbox ? requiresApprovalCheckbox.checked : false;
 
             if (!chore) {
                 showMessage('Chore name is required', true);
@@ -1575,18 +1651,19 @@
                     body: JSON.stringify({
                         chore: chore,
                         point_value: pointValue,
-                        repeat: repeat
+                        repeat: repeat,
+                        requires_approval: requiresApproval
                     })
                 });
 
                 const result = await response.json();
 
                 if (response.ok) {
-                    showMessage('Chore updated successfully!');
+                    showToast('Chore updated successfully!');
                     editingChoreId = null;
                     await loadChores();
                 } else {
-                    showMessage(result.error || 'Error updating chore', true);
+                    showToast(result.error || 'Error updating chore', true);
                 }
             } catch (error) {
                 showMessage('Network error. Please try again.', true);

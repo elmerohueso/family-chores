@@ -67,6 +67,27 @@ def init_database():
         END $$;
     ''')
     
+    # Add requires_approval column to chores table if it doesn't exist (for existing databases)
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'chores' AND column_name = 'requires_approval'
+            ) THEN
+                -- First check if hide_from_kids exists and rename it, otherwise add new column
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'chores' AND column_name = 'hide_from_kids'
+                ) THEN
+                    ALTER TABLE chores RENAME COLUMN hide_from_kids TO requires_approval;
+                ELSE
+                    ALTER TABLE chores ADD COLUMN requires_approval BOOLEAN DEFAULT FALSE;
+                END IF;
+            END IF;
+        END $$;
+    ''')
+    
     # Create transactions table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (

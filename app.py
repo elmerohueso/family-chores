@@ -32,7 +32,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '1.1.1'
+__version__ = '1.1.2'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -373,7 +373,7 @@ def withdraw_cash_page():
 # Chores endpoints
 @app.route('/api/chores', methods=['GET'])
 def get_chores():
-    """Get all chores."""
+    """Get all chores. All chores are visible, but those with requires_approval=True are greyed out for kids."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute('SELECT * FROM chores')
@@ -463,7 +463,7 @@ def update_chore(chore_id):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     # Get current chore values for comparison
-    cursor.execute('SELECT chore, point_value, "repeat" FROM chores WHERE chore_id = %s', (chore_id,))
+    cursor.execute('SELECT chore, point_value, "repeat", requires_approval FROM chores WHERE chore_id = %s', (chore_id,))
     chore_result = cursor.fetchone()
     if not chore_result:
         cursor.close()
@@ -479,6 +479,7 @@ def update_chore(chore_id):
     old_chore_name = chore_result['chore']
     old_point_value = chore_result.get('point_value')
     old_repeat = chore_result.get('repeat')
+    old_requires_approval = chore_result.get('requires_approval', False)
     
     # Track changed fields for logging (with old and new values)
     changed_fields = {}
@@ -513,6 +514,15 @@ def update_chore(chore_id):
                 changed_fields['repeat'] = {'old': old_repeat_normalized, 'new': repeat_value}
             updates.append('"repeat" = %s')
             params.append(repeat_value)
+        
+        if 'requires_approval' in data:
+            requires_approval = data.get('requires_approval', False)
+            if isinstance(requires_approval, str):
+                requires_approval = requires_approval.lower() in ('true', '1', 'yes')
+            if requires_approval != old_requires_approval:
+                changed_fields['requires_approval'] = {'old': old_requires_approval, 'new': requires_approval}
+            updates.append('requires_approval = %s')
+            params.append(requires_approval)
         
         if not updates:
             cursor.close()
@@ -609,13 +619,18 @@ def create_chore():
         # Key not provided, default to 'as_needed'
         repeat_value = 'as_needed'
     
+    # Handle requires_approval field (default to False if not provided)
+    requires_approval = data.get('requires_approval', False)
+    if isinstance(requires_approval, str):
+        requires_approval = requires_approval.lower() in ('true', '1', 'yes')
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
         cursor.execute(
-            'INSERT INTO chores (chore, point_value, "repeat") VALUES (%s, %s, %s) RETURNING chore_id',
-            (data['chore'], point_value, repeat_value)
+            'INSERT INTO chores (chore, point_value, "repeat", requires_approval) VALUES (%s, %s, %s, %s) RETURNING chore_id',
+            (data['chore'], point_value, repeat_value, requires_approval)
         )
         chore_id = cursor.fetchone()[0]
         conn.commit()
@@ -1186,11 +1201,19 @@ def create_transaction():
     
     if data.get('chore_id'):
         transaction_type = 'chore_completed'
-        # Get chore name from chores table
-        cursor.execute('SELECT chore FROM chores WHERE chore_id = %s', (data['chore_id'],))
+        # Get chore name and point value from chores table
+        cursor.execute('SELECT chore, point_value FROM chores WHERE chore_id = %s', (data['chore_id'],))
         chore_result = cursor.fetchone()
         if chore_result:
             description = chore_result['chore']
+            chore_point_value = chore_result['point_value']
+            
+            # If user is a kid, validate that point value matches chore's point value
+            user_role = session.get('user_role')
+            if user_role == 'kid' and value != chore_point_value:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Kids cannot modify point values. Point value must match the chore\'s default value.'}), 403
         
         # Update last_completed timestamp for the chore (in local system time)
         completion_timestamp = data.get('timestamp') or get_system_timestamp()

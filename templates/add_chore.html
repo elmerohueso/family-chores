@@ -372,6 +372,14 @@
                         <div class="help-text">How often this chore should be repeated (default: as needed)</div>
                     </div>
 
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="requires_approval" name="requires_approval" value="true">
+                            Requires Parental Approval
+                        </label>
+                        <div class="help-text">If checked, completions of this chore can only be recorded by Parents</div>
+                    </div>
+
                     <div class="button-group">
                         <button type="submit" class="btn-primary">Add Chore</button>
                         <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
@@ -467,10 +475,12 @@
 
             const formData = new FormData(e.target);
             const repeatValue = formData.get('repeat');
+            const requiresApproval = formData.get('requires_approval') === 'true';
             const data = {
                 chore: formData.get('chore'),
                 point_value: parseInt(formData.get('point_value')),
-                repeat: repeatValue === '' ? null : repeatValue
+                repeat: repeatValue === '' ? null : repeatValue,
+                requires_approval: requiresApproval
             };
 
             try {
