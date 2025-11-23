@@ -32,7 +32,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '1.1.0'
+__version__ = '1.1.1'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -2219,117 +2219,6 @@ def set_last_daily_cash_out_date(date):
     except Exception as e:
         logger.error(f"Error setting last daily cash out date: {e}", exc_info=True)
 
-def daily_cash_out_worker():
-    """Background worker that checks for midnight local system time and processes daily cash out."""
-    logger.debug("Daily cash out worker thread started")
-    # Log timezone info for debugging
-    try:
-        import time as time_module_for_tz
-        tz_offset = time_module_for_tz.timezone if hasattr(time_module_for_tz, 'timezone') else 0
-        logger.debug(f"Daily cash out worker using local system time (timezone offset: {tz_offset} seconds)")
-    except:
-        pass
-    
-    while True:
-        try:
-            # Use local system time (datetime.now() without timezone returns local time)
-            now = datetime.now()
-            current_date = now.date()
-            current_time = now.time()
-            
-            # Get last processed date from database (persisted across restarts)
-            last_processed_date = get_last_daily_cash_out_date()
-            
-            # Determine if we need to process
-            should_process = False
-            process_date = current_date
-            reason = ""
-            
-            # Get configured cash out time (default to midnight)
-            cash_out_time_str = get_setting('daily_cash_out_time', '00:00')
-            try:
-                cash_out_hour, cash_out_minute = map(int, cash_out_time_str.split(':'))
-            except (ValueError, AttributeError):
-                # Fallback to midnight if parsing fails
-                cash_out_hour, cash_out_minute = 0, 0
-                logger.warning(f"Failed to parse cash out time '{cash_out_time_str}', using midnight (00:00)")
-            
-            # Check if we need to process today
-            # Process at configured time (check if we're in the scheduled minute)
-            if now.hour == cash_out_hour and now.minute == cash_out_minute:
-                if last_processed_date != current_date:
-                    should_process = True
-                    reason = f"Regular scheduled processing for {current_date} at {cash_out_time_str} (local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
-                    # Log the check
-                    try:
-                        log_system_event('cash_out_check', f'Cash out check at scheduled time {cash_out_time_str}', 
-                                        {'current_time': now.strftime('%Y-%m-%d %H:%M:%S'), 'scheduled_time': cash_out_time_str, 
-                                         'last_processed': str(last_processed_date), 'will_process': True}, 'success')
-                    except Exception:
-                        pass  # Don't fail if logging fails
-                else:
-                    # Already processed today - this can happen if time was changed after cash out already ran
-                    try:
-                        log_system_event('cash_out_check', f'Cash out check at scheduled time {cash_out_time_str} - already processed today', 
-                                        {'current_time': now.strftime('%Y-%m-%d %H:%M:%S'), 'scheduled_time': cash_out_time_str, 
-                                         'last_processed': str(last_processed_date), 'will_process': False}, 'success')
-                    except Exception:
-                        pass  # Don't fail if logging fails
-            # Recovery check: If it's within 10 minutes after scheduled time and we missed today, process it
-            elif now.hour == cash_out_hour and now.minute > cash_out_minute and now.minute <= cash_out_minute + 10:
-                if last_processed_date != current_date:
-                    should_process = True
-                    reason = f"Recovery processing for {current_date} (missed scheduled time {cash_out_time_str}, local time: {now.strftime('%Y-%m-%d %H:%M:%S')})"
-                    # Log recovery check (only once per recovery window)
-                    if now.minute == cash_out_minute + 1:
-                        try:
-                            log_system_event('cash_out_check', f'Cash out recovery check - missed scheduled time {cash_out_time_str}', 
-                                            {'current_time': now.strftime('%Y-%m-%d %H:%M:%S'), 'scheduled_time': cash_out_time_str, 
-                                             'last_processed': str(last_processed_date), 'will_process': True}, 'success')
-                        except Exception:
-                            pass  # Don't fail if logging fails
-                else:
-                    # Already processed today
-                    if now.minute == cash_out_minute + 1:  # Only log once per recovery window
-                        try:
-                            log_system_event('cash_out_check', f'Cash out recovery check - already processed today', 
-                                            {'current_time': now.strftime('%Y-%m-%d %H:%M:%S'), 'scheduled_time': cash_out_time_str, 
-                                             'last_processed': str(last_processed_date), 'will_process': False}, 'success')
-                        except Exception:
-                            pass  # Don't fail if logging fails
-            
-            if should_process:
-                logger.info(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')} (local system time): {reason}")
-                try:
-                    process_daily_cash_out()
-                    # Store the date we just processed
-                    set_last_daily_cash_out_date(process_date)
-                    logger.info(f"Daily cash out completed for {process_date}")
-                except Exception as e:
-                    error_msg = str(e)
-                    logger.error(f"Error during daily cash out processing: {error_msg}", exc_info=True)
-                    
-                    # Log cash out error
-                    try:
-                        log_system_event('cash_out_error', f'Error during daily cash out: {error_msg}', 
-                                        {'error': error_msg, 'date': str(process_date), 'reason': reason}, 'error')
-                    except Exception:
-                        pass  # Don't fail if logging fails
-            
-            # Sleep for 1 minute
-            time_module.sleep(60)
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Error in daily cash out worker: {error_msg}", exc_info=True)
-            
-            # Log worker error
-            try:
-                log_system_event('cash_out_error', f'Error in daily cash out worker: {error_msg}', 
-                                {'error': error_msg}, 'error')
-            except Exception:
-                pass  # Don't fail if logging fails
-            
-            time_module.sleep(60)
 
 def send_daily_digest_email(force=False):
     """Generate and send daily digest email with today's history and current balances.
@@ -2366,12 +2255,13 @@ def send_daily_digest_email(force=False):
                 raise ValueError("No parent email addresses configured")
             return
         
-        # Get today's date in local timezone
+        # Get yesterday's date in local timezone (since digest triggers at midnight)
         now = datetime.now()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        yesterday = now - timedelta(days=1)
+        yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
         
-        # Get all transactions for today
+        # Get all transactions for yesterday
         cursor.execute('''
             SELECT 
                 t.transaction_id,
@@ -2385,7 +2275,7 @@ def send_daily_digest_email(force=False):
             LEFT JOIN "user" u ON t.user_id = u.user_id
             WHERE t.timestamp >= %s AND t.timestamp <= %s
             ORDER BY t.timestamp DESC
-        ''', (today_start, today_end))
+        ''', (yesterday_start, yesterday_end))
         transactions = cursor.fetchall()
         
         # Get all users with their current balances
@@ -2448,8 +2338,8 @@ def send_daily_digest_email(force=False):
                 """
                 transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
         else:
-            transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions today</td></tr>"
-            transactions_text = "No transactions today\n"
+            transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions yesterday</td></tr>"
+            transactions_text = "No transactions yesterday\n"
         
         # Format user balances
         balances_html = ""
@@ -2468,7 +2358,7 @@ def send_daily_digest_email(force=False):
             balances_text += f"{user_name}: {point_balance} points, ${cash_balance:.2f}\n"
         
         # Generate email content
-        date_str = now.strftime('%B %d, %Y')
+        date_str = yesterday.strftime('%B %d, %Y')
         subject = f"Family Chores Daily Digest - {date_str}"
         
         body_html = f"""
@@ -2477,7 +2367,7 @@ def send_daily_digest_email(force=False):
           <body>
             <h2>Daily Digest - {date_str}</h2>
             
-            <h3>Today's Activity</h3>
+            <h3>Yesterday's Activity</h3>
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <thead>
                     <tr style="background-color: #f5f5f5;">
@@ -2515,7 +2405,7 @@ def send_daily_digest_email(force=False):
         
         body_text = f"""Daily Digest - {date_str}
 
-Today's Activity:
+Yesterday's Activity:
 {transactions_text}
 
 Current Balances:
@@ -2543,51 +2433,71 @@ Sent from Family Chores application
     except Exception as e:
         logger.error(f"Error sending daily digest email: {e}", exc_info=True)
 
-def daily_digest_worker():
-    """Background worker that sends daily digest email at midnight."""
-    logger.debug("Daily digest worker thread started")
+
+
+
+
+################################
+
+def job_timer():
+    """Background worker that runs the job timer."""
+    thread_id = threading.current_thread().ident
+    thread_name = threading.current_thread().name
+    logger.debug(f"Job_timer worker thread started (thread_id={thread_id}, name={thread_name})")
     
     while True:
         try:
+            # Get configured cash out time (default to midnight)
+            cash_out_time_str = get_setting('daily_cash_out_time', '00:00')
+            try:
+                cash_out_hour, cash_out_minute = map(int, cash_out_time_str.split(':'))
+            except (ValueError, AttributeError):
+                # Fallback to midnight if parsing fails
+                        cash_out_hour, cash_out_minute = 0, 0
+                        logger.warning(f"Failed to parse cash out time '{cash_out_time_str}', using midnight (00:00)")
+            # Get last automatic cash out date from database (persisted across restarts)
+            last_processed_date = get_last_daily_cash_out_date()
+
             # Get current time in local system timezone
             now = datetime.now()
             current_date = now.date()
-            
-            # Check if it's midnight (00:00)
+
+            jobs_to_trigger = []
+            if now.hour == cash_out_hour and now.minute == cash_out_minute and last_processed_date != current_date:
+                jobs_to_trigger.append("cash_out")
+
             if now.hour == 0 and now.minute == 0:
-                logger.info(f"Sending daily digest email for {current_date}")
+                jobs_to_trigger.append("daily_digest")
+
+            if "cash_out" in jobs_to_trigger:
+                logger.info(f"Triggering automatic daily cash out.")
+                process_daily_cash_out()
+            if "daily_digest" in jobs_to_trigger:
+                logger.info(f"Sending daily digest email.)")
                 send_daily_digest_email()
-                # Sleep for 1 minute to avoid sending multiple times in the same minute
-                time_module.sleep(60)
-            else:
-                # Sleep for 1 minute and check again
-                time_module.sleep(60)
+            if not jobs_to_trigger:
+                logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
+            # Sleep for 1 minute and check again
+            time_module.sleep(60)
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"Error in daily digest worker: {error_msg}", exc_info=True)
+            logger.error(f"Error in job_timer: {error_msg}", exc_info=True)
             time_module.sleep(60)
 
-def start_daily_cash_out_scheduler():
-    """Start the background thread for daily cash out."""
-    try:
-        thread = threading.Thread(target=daily_cash_out_worker, daemon=True, name="DailyCashOutWorker")
-        thread.start()
-        logger.info("Daily cash out scheduler started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start daily cash out scheduler: {e}", exc_info=True)
 
-def start_daily_digest_scheduler():
-    """Start the background thread for daily digest emails."""
+def start_job_timer():
+    """Start the background thread for automatic daily cash out and daily digest emails."""
     try:
-        thread = threading.Thread(target=daily_digest_worker, daemon=True, name="DailyDigestWorker")
+        thread = threading.Thread(target=job_timer, daemon=True, name="JobTimerWorker")
         thread.start()
-        logger.info("Daily digest scheduler started successfully")
+        logger.info("job_timer started successfully")
     except Exception as e:
-        logger.error(f"Failed to start daily digest scheduler: {e}", exc_info=True)
+        logger.error(f"Failed to start job_timer: {e}", exc_info=True)
 
-# Start the schedulers when module is imported (works in all deployment scenarios)
-start_daily_cash_out_scheduler()
-start_daily_digest_scheduler()
+################################
+
+# Start the job timer for automatic daily cash out and daily digest emails
+start_job_timer()
 
 
 if __name__ == '__main__':
@@ -2598,5 +2508,5 @@ if __name__ == '__main__':
     except Exception as e:
         logger.info(f"Database initialization check failed (this is OK if tables already exist): {e}")
     
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=False)
 
