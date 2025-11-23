@@ -1186,11 +1186,19 @@ def create_transaction():
     
     if data.get('chore_id'):
         transaction_type = 'chore_completed'
-        # Get chore name from chores table
-        cursor.execute('SELECT chore FROM chores WHERE chore_id = %s', (data['chore_id'],))
+        # Get chore name and point value from chores table
+        cursor.execute('SELECT chore, point_value FROM chores WHERE chore_id = %s', (data['chore_id'],))
         chore_result = cursor.fetchone()
         if chore_result:
             description = chore_result['chore']
+            chore_point_value = chore_result['point_value']
+            
+            # If user is a kid, validate that point value matches chore's point value
+            user_role = session.get('user_role')
+            if user_role == 'kid' and value != chore_point_value:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Kids cannot modify point values. Point value must match the chore\'s default value.'}), 403
         
         # Update last_completed timestamp for the chore (in local system time)
         completion_timestamp = data.get('timestamp') or get_system_timestamp()
