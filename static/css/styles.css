@@ -358,7 +358,8 @@ input[type="file"] {
     margin-bottom: 30px;
 }
 
-.btn-add-user {
+.btn-add-user,
+.btn-add-chore {
     display: inline-block;
     padding: 12px 24px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -369,10 +370,14 @@ input[type="file"] {
     font-size: 16px;
     font-weight: 600;
     transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-add-user {
     margin: 12px auto 0;
 }
 
-.btn-add-user:hover {
+.btn-add-user:hover,
+.btn-add-chore:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
@@ -381,7 +386,7 @@ input[type="file"] {
 .loading {
     text-align: center;
     padding: 40px;
-    color: #333;
+    color: #666;
     font-size: 18px;
 }
 
@@ -1327,29 +1332,6 @@ td {
     font-size: 14px;
 }
 
-.empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: #666;
-}
-
-.empty-state-icon {
-    font-size: 80px;
-    margin-bottom: 20px;
-    opacity: 0.5;
-}
-
-.empty-state-text {
-    font-size: 18px;
-}
-
-.loading {
-    text-align: center;
-    padding: 40px;
-    color: #666;
-    font-size: 18px;
-}
-
 /* History page responsive styles */
 @media (max-width: 768px) {
     .card {
@@ -1440,34 +1422,10 @@ td {
     letter-spacing: 0.5px;
 }
 
-.btn-add-chore {
-    display: inline-block;
-    padding: 12px 24px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    text-decoration: none;
-    border-radius: 8px;
-    font-weight: 600;
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.btn-add-chore:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
 /* ===== Add Chore Page Styles ===== */
 
 .container-with-bottom-padding {
     max-width: 900px;
-    padding-bottom: 50px;
-    position: relative;
-}
-
-.container-with-bottom-padding .card h1 {
-    text-align: left;
-    font-size: 28px;
-    text-shadow: none;
 }
 
 .tabs {
@@ -1587,14 +1545,6 @@ input[type="file"] {
 
 .container-add-user {
     max-width: 500px;
-    padding-bottom: 50px;
-    position: relative;
-}
-
-.container-add-user .card h1 {
-    text-align: left;
-    font-size: 28px;
-    text-shadow: none;
 }
 
 .avatar-upload-section {
@@ -1993,12 +1943,6 @@ input:checked + .toggle-slider:before {
     text-transform: none;
 }
 
-.settings-chore-name {
-    font-weight: 600;
-    color: #333;
-    font-size: 16px;
-}
-
 .editable {
     cursor: pointer;
     position: relative;
@@ -2087,22 +2031,6 @@ input:checked + .toggle-slider:before {
 .btn-delete:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-}
-
-.chores-empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: #666;
-}
-
-.chores-empty-state-icon {
-    font-size: 80px;
-    margin-bottom: 20px;
-    opacity: 0.5;
-}
-
-.chores-empty-state-text {
-    font-size: 18px;
 }
 
 .btn-manual-cashout {
