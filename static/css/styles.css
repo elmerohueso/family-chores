@@ -1605,6 +1605,7 @@ input:checked + .toggle-slider:before {
 .chores-toggle-icon {
     font-size: 14px;
     transition: transform 0.3s;
+    cursor: pointer;
 }
 
 .chores-toggle-icon.expanded {

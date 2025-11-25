@@ -1106,12 +1106,8 @@
 
         async function triggerDailyCashOut() {
             const btn = document.getElementById('manualCashoutBtn');
-            const messageDiv = document.getElementById('systemMessage');
-            
             btn.disabled = true;
             btn.textContent = 'Processing...';
-            messageDiv.className = 'system-message';
-            messageDiv.style.display = 'none';
 
             try {
                 const response = await fetch('/api/daily-cash-out', {
@@ -1121,34 +1117,13 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    messageDiv.textContent = result.message || 'Daily cash out processed successfully!';
-                    messageDiv.className = 'system-message success';
-                    messageDiv.style.display = 'block';
-                    
-                    // Hide message after 10 seconds
-                    setTimeout(() => {
-                        messageDiv.style.display = 'none';
-                    }, 10000);
+                    showToast(result.message || 'Daily cash out processed successfully!');
                 } else {
-                    messageDiv.textContent = result.error || 'Error processing daily cash out';
-                    messageDiv.className = 'system-message error';
-                    messageDiv.style.display = 'block';
-                    
-                    // Hide message after 10 seconds
-                    setTimeout(() => {
-                        messageDiv.style.display = 'none';
-                    }, 10000);
+                    showToast(result.error || 'Error processing daily cash out', true);
                 }
             } catch (error) {
-                messageDiv.textContent = 'Network error. Please try again.';
-                messageDiv.className = 'system-message error';
-                messageDiv.style.display = 'block';
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
-                
-                // Hide message after 10 seconds
-                setTimeout(() => {
-                    messageDiv.style.display = 'none';
-                }, 10000);
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Run One-Time Cash Out';
@@ -1204,13 +1179,10 @@
         // Send test email
         async function sendTestEmail() {
             const btn = document.getElementById('testEmailBtn');
-            const messageDiv = document.getElementById('emailTestMessage');
             const parentEmails = document.getElementById('parentEmailAddresses').value.trim();
             
             btn.disabled = true;
             btn.textContent = 'Sending...';
-            messageDiv.className = 'system-message';
-            messageDiv.style.display = 'none';
 
             // Parse comma-separated emails
             const emailList = parentEmails ? parentEmails.split(',').map(e => e.trim()).filter(e => e) : [];
@@ -1229,34 +1201,13 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    messageDiv.textContent = result.message || `Test email sent successfully to ${emailList.length || 'all configured'} address(es)!`;
-                    messageDiv.className = 'system-message success';
-                    messageDiv.style.display = 'block';
-                    
-                    // Hide message after 10 seconds
-                    setTimeout(() => {
-                        messageDiv.style.display = 'none';
-                    }, 10000);
+                    showToast(result.message || `Test email sent successfully to ${emailList.length || 'all configured'} address(es)!`);
                 } else {
-                    messageDiv.textContent = result.error || 'Error sending test email';
-                    messageDiv.className = 'system-message error';
-                    messageDiv.style.display = 'block';
-                    
-                    // Hide message after 10 seconds
-                    setTimeout(() => {
-                        messageDiv.style.display = 'none';
-                    }, 10000);
+                    showToast(result.error || 'Error sending test email', true);
                 }
             } catch (error) {
-                messageDiv.textContent = 'Network error. Please try again.';
-                messageDiv.className = 'system-message error';
-                messageDiv.style.display = 'block';
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
-                
-                // Hide message after 10 seconds
-                setTimeout(() => {
-                    messageDiv.style.display = 'none';
-                }, 10000);
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Send Test Email';
@@ -1267,8 +1218,6 @@
         async function sendDailyDigest() {
             const btn1 = document.getElementById('sendDigestBtn');
             const btn2 = document.getElementById('sendDigestBtn2');
-            const messageDiv = document.getElementById('emailTestMessage');
-            
             // Disable both buttons
             if (btn1) {
                 btn1.disabled = true;
@@ -1278,8 +1227,6 @@
                 btn2.disabled = true;
                 btn2.textContent = 'Sending...';
             }
-            messageDiv.className = 'system-message';
-            messageDiv.style.display = 'none';
 
             try {
                 const response = await fetch('/api/send-daily-digest', {
@@ -1292,34 +1239,13 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    messageDiv.textContent = result.message || 'Daily digest email sent successfully!';
-                    messageDiv.className = 'system-message success';
-                    messageDiv.style.display = 'block';
-                    
-                    // Hide message after 10 seconds
-                    setTimeout(() => {
-                        messageDiv.style.display = 'none';
-                    }, 10000);
+                    showToast(result.message || 'Daily digest email sent successfully!');
                 } else {
-                    messageDiv.textContent = result.error || 'Error sending daily digest email';
-                    messageDiv.className = 'system-message error';
-                    messageDiv.style.display = 'block';
-                    
-                    // Hide message after 10 seconds
-                    setTimeout(() => {
-                        messageDiv.style.display = 'none';
-                    }, 10000);
+                    showToast(result.error || 'Error sending daily digest email', true);
                 }
             } catch (error) {
-                messageDiv.textContent = 'Network error. Please try again.';
-                messageDiv.className = 'system-message error';
-                messageDiv.style.display = 'block';
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
-                
-                // Hide message after 10 seconds
-                setTimeout(() => {
-                    messageDiv.style.display = 'none';
-                }, 10000);
             } finally {
                 if (btn1) {
                     btn1.disabled = false;
