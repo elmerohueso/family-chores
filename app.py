@@ -936,7 +936,14 @@ def delete_user(user_id):
     # Note: Transactions are kept for historical purposes - they reference user_id
     # which will become orphaned. The user record is deleted but transactions remain.
     # If you want to delete transactions too, uncomment the line below:
-    # cursor.execute('DELETE FROM transactions WHERE user_id = %s', (user_id,))
+    # Delete transactions first to avoid foreign key issues, then balances.
+    try:
+        cursor.execute('DELETE FROM transactions WHERE user_id = %s', (user_id,))
+        deleted_tx = cursor.rowcount
+    except Exception:
+        # If transactions table or FK constraints behave differently, ignore and continue
+        deleted_tx = None
+
     cursor.execute('DELETE FROM cash_balances WHERE user_id = %s', (user_id,))
     
     # Delete user
