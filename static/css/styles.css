@@ -581,13 +581,11 @@ header h1 {
 }
 
 /* Unified Form Elements */
-.input,
+.form-input,
 input[type="text"],
 input[type="number"],
-select,
-.edit-input,
-.number-input,
-.pin-input {
+input[type="time"],
+input[type="password"] {
     width: 100%;
     padding: 12px 16px;
     border: 2px solid #e0e0e0;
@@ -597,31 +595,53 @@ select,
     font-family: inherit;
 }
 
-.input:focus,
+.form-input:focus,
 input[type="text"]:focus,
 input[type="number"]:focus,
-select:focus,
-.edit-input:focus,
-.number-input:focus,
-.pin-input:focus {
+input[type="time"]:focus,
+input[type="password"]:focus {
     outline: none;
     border-color: #667eea;
 }
 
-.input-sm,
-.number-input {
+.form-input-sm {
     padding: 10px 12px;
 }
 
-.edit-input,
-.pin-input {
+.form-input-focus {
     border-color: #667eea;
 }
 
-.pin-input {
+.form-input-pin {
+    border-color: #667eea;
     text-align: center;
     letter-spacing: 8px;
     box-sizing: border-box;
+}
+
+.form-select,
+select {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: border-color 0.3s;
+    font-family: inherit;
+    background: white;
+}
+
+.form-select:focus,
+select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.form-select-focus {
+    padding: 8px 12px;
+    border-color: #667eea;
+    font-size: 14px;
+    border-radius: 6px;
 }
 
 /* Unified Interactive States */
@@ -1082,16 +1102,6 @@ button:disabled:hover {
 
 .search-input {
     flex: 1;
-    padding: 12px 16px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 16px;
-    transition: border-color 0.3s;
-}
-
-.search-input:focus {
-    outline: none;
-    border-color: #667eea;
 }
 
 .search-icon {
@@ -1645,15 +1655,7 @@ input:checked + .toggle-slider:before {
     opacity: 0.5;
 }
 
-.edit-select {
-    width: 100%;
-    padding: 8px 12px;
-    border: 2px solid #667eea;
-    border-radius: 6px;
-    font-size: 14px;
-    font-family: inherit;
-    background: white;
-}
+
 
 .edit-actions {
     display: flex;

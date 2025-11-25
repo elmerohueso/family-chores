@@ -35,7 +35,7 @@
                         </div>
                         <div class="input-group" style="margin-top: 12px;">
                             <label for="dailyCashOutTime" class="setting-name">Cash Out Time:</label>
-                            <input type="time" id="dailyCashOutTime" class="number-input" required style="width: 180px;">
+                            <input type="time" id="dailyCashOutTime" class="form-input" required style="width: 180px;">
                             <span style="color: #666; margin-left: 8px;">(if automatic cash out has already run today, changing this time will not take effect until tomorrow)</span>
                         </div>
                     </div>
@@ -48,7 +48,7 @@
                             Maximum number of points that can be carried over to the next day. Points above this amount will be converted to cash (if Automatic Daily Cash Out is enabled) or capped at this amount (if disabled).
                         </div>
                         <div class="input-group" style="margin-top: 12px;">
-                            <input type="number" id="maxRolloverPoints" class="number-input" min="0" required style="width: 100px;">
+                            <input type="number" id="maxRolloverPoints" class="form-input" min="0" required style="width: 100px;">
                             <span style="color: #666;">points</span>
                         </div>
                         <div style="text-align: right;">
@@ -67,17 +67,17 @@
                         <div style="margin-top: 16px;">
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="dailyCooldownHours" style="min-width: 180px;" class="setting-name">Daily Cooldown:</label>
-                                <input type="number" id="dailyCooldownHours" class="number-input" min="0" required style="width: 100px;">
+                                <input type="number" id="dailyCooldownHours" class="form-input" min="0" required style="width: 100px;">
                                 <span style="color: #666;">hours</span>
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="weeklyCooldownDays" style="min-width: 180px;" class="setting-name">Weekly Cooldown:</label>
-                                <input type="number" id="weeklyCooldownDays" class="number-input" min="0" required style="width: 100px;">
+                                <input type="number" id="weeklyCooldownDays" class="form-input" min="0" required style="width: 100px;">
                                 <span style="color: #666;">days</span>
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="monthlyCooldownDays" style="min-width: 180px;" class="setting-name">Monthly Cooldown:</label>
-                                <input type="number" id="monthlyCooldownDays" class="number-input" min="0" required style="width: 100px;">
+                                <input type="number" id="monthlyCooldownDays" class="form-input" min="0" required style="width: 100px;">
                                 <span style="color: #666;">days</span>
                             </div>
                         </div>
@@ -129,29 +129,29 @@
                         <div style="margin-top: 16px;">
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSmtpServer" style="min-width: 150px;" class="setting-name">SMTP Server:</label>
-                                <input type="text" id="emailSmtpServer" class="number-input" style="width: 300px;" placeholder="smtp.gmail.com">
+                                <input type="text" id="emailSmtpServer" class="form-input" style="width: 300px;" placeholder="smtp.gmail.com">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSmtpPort" style="min-width: 150px;" class="setting-name">SMTP Port:</label>
-                                <input type="number" id="emailSmtpPort" class="number-input" min="1" max="65535" placeholder="587" style="width: 100px;">
+                                <input type="number" id="emailSmtpPort" class="form-input" min="1" max="65535" placeholder="587" style="width: 100px;">
                                 <span style="color: #666;">(usually 587 for TLS or 465 for SSL)</span>
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailUsername" style="min-width: 150px;" class="setting-name">Username:</label>
-                                <input type="text" id="emailUsername" class="number-input" style="width: 300px;" placeholder="your.email@example.com">
+                                <input type="text" id="emailUsername" class="form-input" style="width: 300px;" placeholder="your.email@example.com">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailPassword" style="min-width: 150px;" class="setting-name">Password:</label>
-                                <input type="password" id="emailPassword" class="number-input" style="width: 300px;" placeholder="Leave empty to keep existing">
+                                <input type="password" id="emailPassword" class="form-input" style="width: 300px;" placeholder="Leave empty to keep existing">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSenderName" style="min-width: 150px;" class="setting-name">Sender Name:</label>
-                                <input type="text" id="emailSenderName" class="number-input" style="width: 300px;" placeholder="Family Chores">
+                                <input type="text" id="emailSenderName" class="form-input" style="width: 300px;" placeholder="Family Chores">
                             </div>
                             <div style="margin-top: 16px;">
                                 <div class="input-group" style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
                                     <label for="parentEmailAddresses" style="min-width: 150px;" class="setting-name">Parent Address(es):</label>
-                                    <input type="text" id="parentEmailAddresses" class="number-input" style="width: 300px;" placeholder="email1@example.com, email2@example.com">
+                                    <input type="text" id="parentEmailAddresses" class="form-input" style="width: 300px;" placeholder="email1@example.com, email2@example.com">
                                 </div>
                                 <div style="text-align: right; margin-bottom: 12px;">
                                     <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
@@ -753,15 +753,15 @@
                     return `
                         <tr class="editing" data-chore-id="${chore.chore_id}">
                             <td>
-                                <input type="text" class="edit-input" id="edit-chore-${chore.chore_id}" 
+                                <input type="text" class="form-input form-input-focus" id="edit-chore-${chore.chore_id}" 
                                        value="${escapeHtml(chore.chore)}" />
                             </td>
                             <td>
-                                <input type="number" class="edit-input" id="edit-point-${chore.chore_id}" 
+                                <input type="number" class="form-input form-input-focus" id="edit-point-${chore.chore_id}" 
                                        value="${chore.point_value || 0}" min="1" />
                             </td>
                             <td>
-                                <select class="edit-select" id="edit-repeat-${chore.chore_id}">
+                                <select class="form-select form-select-focus" id="edit-repeat-${chore.chore_id}">
                                     <option value="as_needed" ${chore.repeat === 'as_needed' ? 'selected' : ''}>As Needed</option>
                                     <option value="daily" ${chore.repeat === 'daily' ? 'selected' : ''}>Daily</option>
                                     <option value="weekly" ${chore.repeat === 'weekly' ? 'selected' : ''}>Weekly</option>
