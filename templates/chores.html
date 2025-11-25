@@ -14,6 +14,7 @@
                 <a href="/" class="nav-link">← Home</a>
             </div>
             <h1>📋 Chores</h1>
+            <button id="exportCsvBtn" class="btn-logout" style="position:absolute; right:16px; top:18px; display:none;">Export CSV</button>
         </header>
 
         <div class="card">
@@ -180,6 +181,24 @@
             }, 3000);
         }
 
+        // showToast: use global `showToast` if available, otherwise create a simple toast.
+        function showToast(text, isError = false) {
+            if (typeof window.showToast === 'function' && window.showToast !== showToast) {
+                try { window.showToast(text, isError); return; } catch (e) { /* fallthrough */ }
+            }
+
+            const toast = document.createElement('div');
+            toast.className = 'toast' + (isError ? ' toast-error' : '');
+            toast.textContent = text;
+            // Position using existing .toast rules in stylesheet (top-center)
+            document.body.appendChild(toast);
+            // Remove after 3s
+            setTimeout(() => {
+                toast.classList.add('toast-hide');
+                setTimeout(() => { try { document.body.removeChild(toast); } catch (e) {} }, 400);
+            }, 3000);
+        }
+
         function updateSortIndicator(column) {
             // Clear all indicators
             document.querySelectorAll('.sort-indicator').forEach(ind => ind.textContent = '');
@@ -338,6 +357,14 @@
                 if (!role) {
                     window.location.href = '/';
                 }
+                // Show Export CSV for parents
+                if (role === 'parent') {
+                    const exportBtn = document.getElementById('exportCsvBtn');
+                    if (exportBtn) {
+                        exportBtn.style.display = 'inline-block';
+                        exportBtn.addEventListener('click', showExportDialog);
+                    }
+                }
             } catch (error) {
                 console.error('Error checking role:', error);
             }
@@ -372,6 +399,154 @@
 
         // Load footer on page load
         loadAppFooter();
+
+        // Export CSV functionality (parent-only). Prompts columns to include and downloads a CSV.
+        function showExportDialog() {
+            const columns = [
+                { key: 'chore', label: 'Chore' },
+                { key: 'point_value', label: 'Point Value' },
+                { key: 'repeat', label: 'Repeat' },
+                { key: 'requires_approval', label: 'Requires Parental Approval' },
+                { key: 'last_completed', label: 'Last Completed' }
+            ];
+
+            const overlay = document.createElement('div');
+            overlay.className = 'export-overlay';
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.background = 'rgba(0,0,0,0.35)';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.style.zIndex = '2200';
+
+            const dialog = document.createElement('div');
+            dialog.style.background = 'white';
+            dialog.style.padding = '18px';
+            dialog.style.borderRadius = '10px';
+            dialog.style.width = '340px';
+            dialog.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)';
+
+            const title = document.createElement('div');
+            title.textContent = 'Select columns to include';
+            title.style.fontWeight = '600';
+            title.style.marginBottom = '10px';
+            dialog.appendChild(title);
+
+            const form = document.createElement('div');
+            form.style.display = 'flex';
+            form.style.flexDirection = 'column';
+            form.style.gap = '8px';
+
+            const allWrap = document.createElement('label');
+            const allCheckbox = document.createElement('input');
+            allCheckbox.type = 'checkbox';
+            allCheckbox.checked = true;
+            allWrap.appendChild(allCheckbox);
+            allWrap.appendChild(document.createTextNode(' Select all'));
+            form.appendChild(allWrap);
+
+            const checks = [];
+            columns.forEach(col => {
+                const wrap = document.createElement('label');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.dataset.key = col.key;
+                cb.checked = true;
+                wrap.appendChild(cb);
+                wrap.appendChild(document.createTextNode(' ' + col.label));
+                form.appendChild(wrap);
+                checks.push(cb);
+            });
+
+            allCheckbox.addEventListener('change', () => checks.forEach(c => c.checked = allCheckbox.checked));
+
+            dialog.appendChild(form);
+
+            const actions = document.createElement('div');
+            actions.style.display = 'flex';
+            actions.style.justifyContent = 'flex-end';
+            actions.style.gap = '8px';
+            actions.style.marginTop = '12px';
+
+            const cancel = document.createElement('button');
+            cancel.className = 'btn btn-sm btn-gray-on-cream';
+            cancel.textContent = 'Cancel';
+            cancel.addEventListener('click', () => document.body.removeChild(overlay));
+
+            const ok = document.createElement('button');
+            ok.className = 'btn btn-sm btn-white-on-purple';
+            ok.textContent = 'Export';
+            ok.addEventListener('click', () => {
+                const selected = checks.filter(c => c.checked).map(c => c.dataset.key);
+                if (selected.length === 0) {
+                    showToast('Please select at least one column', true);
+                    return;
+                }
+                try {
+                    downloadCSV(selected);
+                    showToast('Export started');
+                } catch (e) {
+                    console.error(e);
+                    showToast('Export failed', true);
+                }
+                document.body.removeChild(overlay);
+            });
+
+            actions.appendChild(cancel);
+            actions.appendChild(ok);
+            dialog.appendChild(actions);
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+        }
+
+        function downloadCSV(columns) {
+            const rows = (filteredChores && filteredChores.length > 0) ? filteredChores : allChores;
+            if (!rows || rows.length === 0) {
+                showToast('No chores to export', true);
+                return;
+            }
+
+            const header = columns.map(col => {
+                switch (col) {
+                    case 'chore': return 'Chore';
+                    case 'point_value': return 'Point Value';
+                    case 'repeat': return 'Repeat';
+                    case 'requires_approval': return 'Requires Parental Approval';
+                    case 'last_completed': return 'Last Completed';
+                    default: return col;
+                }
+            });
+
+            const csv = [header.join(',')];
+            rows.forEach(r => {
+                const vals = columns.map(col => {
+                    let v = '';
+                    switch (col) {
+                        case 'chore': v = r.chore || ''; break;
+                        case 'point_value': v = (r.point_value != null) ? r.point_value : ''; break;
+                        case 'repeat': v = formatRepeat(r.repeat); break;
+                        case 'requires_approval': v = r.requires_approval ? 'Yes' : 'No'; break;
+                        case 'last_completed': v = formatTimestamp(r.last_completed); break;
+                        default: v = r[col] || ''; break;
+                    }
+                    const s = String(v).replace(/"/g, '""');
+                    return (/[,\n"]/).test(s) ? '"' + s + '"' : s;
+                });
+                csv.push(vals.join(','));
+            });
+
+            const blob = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'chores_export.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
     </script>
 
     <!-- App Footer -->
