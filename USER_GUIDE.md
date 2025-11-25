@@ -190,6 +190,16 @@ The home page displays all family members with their:
 4. Confirm deletion
 
 
+### Exporting Chores to CSV (Parents)
+
+1. Go to the Chore List page
+2. Click "Export CSV" button in the top-right corner
+3. When prompted, select the columns you want included in the export
+4. Click the "Export" button to download the CSV
+
+
+
+
 
 ### Recording Chores
 
@@ -203,7 +213,7 @@ The home page displays all family members with their:
 ### Redeeming Points
 
 **Redeem Points for Rewards:**
-1. Click "Redeem Points" under the desired use
+1. Click "Redeem Points" under the desired user
 2. Enter the number of points to redeem (must be a multiple of 5)
 3. Choose the redemption type:
    - **Media Time**: 5 points = 30 minutes
@@ -214,14 +224,20 @@ The home page displays all family members with their:
 ### Withdrawing Cash
 
 **Withdraw Cash:**
-1. Click "Withdraw Cash" under the desired used
+1. Click "Withdraw Cash" under the desired user
 2. Enter the amount to withdraw (whole dollars only)
 4. Click "Withdraw Cash"
 
 ### Viewing History
 
 **Action History:**
-1. Click "View History" under the desired used
+1. Click "View History" under the desired user
+
+### Exporting History to CSV (Parents)
+1. Click "View History" under the desired user
+2. Click "Export CSV" button in the top-right corner
+3. When prompted, select the columns you want included in the export
+4. Click the "Export" button to download the CSV
 
 ### Settings
 

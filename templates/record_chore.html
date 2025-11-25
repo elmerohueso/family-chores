@@ -74,12 +74,22 @@
             messageDiv.textContent = text;
             messageDiv.className = 'message ' + (isError ? 'error' : 'success');
             messageDiv.style.display = 'block';
-            
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            
+            setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
+        }
+
+        function showToast(text, isError = false) {
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) { existingToast.remove(); }
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'error' : 'success'}`;
+            toast.textContent = text;
+            document.body.appendChild(toast);
+            setTimeout(() => { toast.classList.add('show'); }, 10);
             setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
+                toast.classList.remove('show');
+                setTimeout(() => { toast.remove(); }, 300);
+            }, 3000);
         }
 
         function showConfirmation(user, chore, points) {
@@ -157,7 +167,7 @@
                 }
             } catch (error) {
                 console.error('Error loading users:', error);
-                showMessage('Error loading users. Please refresh the page.', true);
+                showToast('Error loading users. Please refresh the page.', true);
             }
         }
 
@@ -209,7 +219,7 @@
                 renderChoreDropdown();
             } catch (error) {
                 console.error('Error loading chores:', error);
-                showMessage('Error loading chores. Please refresh the page.', true);
+                showToast('Error loading chores. Please refresh the page.', true);
             }
         }
 
@@ -435,19 +445,23 @@
                 if (response.ok) {
                     const user = users.find(u => u.user_id == data.user_id);
                     const chore = chores.find(c => c.chore_id == data.chore_id);
-                    
                     if (user && chore) {
-                        showConfirmation(user, chore, data.value);
+                        const newBalance = (user.balance || 0) + data.value;
+                        if (userRole === 'kid') {
+                            showConfirmation(user, chore, data.value);
+                        } else {
+                            showToast(`${user.full_name} completed chore "${chore.chore}".`);
+                        }
                     }
                     resetForm();
-                    // Reload users to get updated balances
                     await loadUsers();
+                    submitBtn.disabled = false;
                 } else {
-                    showMessage(result.error || 'Error recording chore', true);
+                    showToast(result.error || 'Error recording chore', true);
                     submitBtn.disabled = false;
                 }
             } catch (error) {
-                showMessage('Network error. Please try again.', true);
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
                 submitBtn.disabled = false;
             }

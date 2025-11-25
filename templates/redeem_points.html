@@ -89,18 +89,29 @@
         let users = [];
         let selectedRedemptionType = null;
         let selectedUser = null;
+        let userRole = null; // Track role to decide toast vs modal
 
         function showMessage(text, isError = false) {
             const messageDiv = document.getElementById('message');
             messageDiv.textContent = text;
             messageDiv.className = 'message ' + (isError ? 'error' : 'success');
             messageDiv.style.display = 'block';
-            
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            
+            setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
+        }
+
+        function showToast(text, isError = false) {
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) { existingToast.remove(); }
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'error' : 'success'}`;
+            toast.textContent = text;
+            document.body.appendChild(toast);
+            setTimeout(() => { toast.classList.add('show'); }, 10);
             setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
+                toast.classList.remove('show');
+                setTimeout(() => { toast.remove(); }, 300);
+            }, 3000);
         }
 
         function resetForm() {
@@ -200,7 +211,7 @@
                 }
             } catch (error) {
                 console.error('Error loading users:', error);
-                showMessage('Error loading users. Please refresh the page.', true);
+                showToast('Error loading users. Please refresh the page.', true);
             }
         }
 
@@ -306,17 +317,21 @@
                         redemptionText = `$${dollars.toFixed(2)}`;
                         redemptionTypeText = 'Money';
                     }
-                    
-                    showConfirmation(user, points, redemptionText, redemptionTypeText);
+                    const newBalancePreview = user ? (user.balance || 0) - points : null;
+                    if (userRole === 'kid') {
+                        showConfirmation(user, points, redemptionText, redemptionTypeText);
+                    } else {
+                        showToast(`${user.full_name} redeemed ${points} points.`);
+                    }
                     resetForm();
-                    // Reload users to get updated balances
                     await loadUsers();
+                    submitBtn.disabled = false;
                 } else {
-                    showMessage(result.error || 'Error redeeming points', true);
+                    showToast(result.error || 'Error redeeming points', true);
                     submitBtn.disabled = false;
                 }
             } catch (error) {
-                showMessage('Network error. Please try again.', true);
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
                 submitBtn.disabled = false;
             }
@@ -376,11 +391,13 @@
                 
                 // Parents always have access
                 if (role === 'parent') {
+                    userRole = 'parent';
                     return;
                 }
                 
                 // Kids need permission check
                 if (role === 'kid') {
+                    userRole = 'kid';
                     try {
                         const settingsResponse = await fetch('/api/settings');
                         const settings = await settingsResponse.json();
@@ -395,6 +412,7 @@
                         return;
                     }
                 } else {
+                    userRole = role;
                     // No role set - redirect to home
                     window.location.href = '/';
                 }

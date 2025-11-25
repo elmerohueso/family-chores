@@ -14,6 +14,7 @@
                 <a href="/" class="nav-link">← Home</a>
             </div>
             <h1>💰 Chore & Reward History</h1>
+            <button id="exportHistoryCsvBtn" class="btn-logout" style="position:absolute; right:16px; top:18px; display:none;">Export CSV</button>
         </header>
 
         <div class="card">
@@ -320,6 +321,22 @@
             return div.innerHTML;
         }
 
+        // showToast: use global `showToast` if available, otherwise create a simple toast.
+        function showToast(text, isError = false) {
+            if (typeof window.showToast === 'function' && window.showToast !== showToast) {
+                try { window.showToast(text, isError); return; } catch (e) { /* fallthrough */ }
+            }
+
+            const toast = document.createElement('div');
+            toast.className = 'toast' + (isError ? ' toast-error' : '');
+            toast.textContent = text;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('toast-hide');
+                setTimeout(() => { try { document.body.removeChild(toast); } catch(e){} }, 400);
+            }, 3000);
+        }
+
         function getUrlParameter(name) {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get(name);
@@ -379,6 +396,12 @@
                 
                 // Parents always have access
                 if (role === 'parent') {
+                    // Reveal Export CSV for parents
+                    const exportBtn = document.getElementById('exportHistoryCsvBtn');
+                    if (exportBtn) {
+                        exportBtn.style.display = 'inline-block';
+                        exportBtn.addEventListener('click', showExportHistoryDialog);
+                    }
                     return;
                 }
                 
@@ -436,6 +459,153 @@
 
         // Load footer on page load
         loadAppFooter();
+
+        // Export CSV for history (parent-only)
+        function showExportHistoryDialog() {
+            const columns = [
+                { key: 'user_name', label: 'User' },
+                { key: 'type', label: 'Type' },
+                { key: 'description', label: 'Description' },
+                { key: 'value', label: 'Amount' },
+                { key: 'timestamp', label: 'Date & Time' }
+            ];
+
+            const overlay = document.createElement('div');
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.background = 'rgba(0,0,0,0.35)';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.style.zIndex = '2200';
+
+            const dialog = document.createElement('div');
+            dialog.style.background = 'white';
+            dialog.style.padding = '18px';
+            dialog.style.borderRadius = '10px';
+            dialog.style.width = '360px';
+            dialog.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)';
+
+            const title = document.createElement('div');
+            title.textContent = 'Select columns to include';
+            title.style.fontWeight = '600';
+            title.style.marginBottom = '10px';
+            dialog.appendChild(title);
+
+            const form = document.createElement('div');
+            form.style.display = 'flex';
+            form.style.flexDirection = 'column';
+            form.style.gap = '8px';
+
+            const allWrap = document.createElement('label');
+            const allCheckbox = document.createElement('input');
+            allCheckbox.type = 'checkbox';
+            allCheckbox.checked = true;
+            allWrap.appendChild(allCheckbox);
+            allWrap.appendChild(document.createTextNode(' Select all'));
+            form.appendChild(allWrap);
+
+            const checks = [];
+            columns.forEach(col => {
+                const wrap = document.createElement('label');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.dataset.key = col.key;
+                cb.checked = true;
+                wrap.appendChild(cb);
+                wrap.appendChild(document.createTextNode(' ' + col.label));
+                form.appendChild(wrap);
+                checks.push(cb);
+            });
+
+            allCheckbox.addEventListener('change', () => checks.forEach(c => c.checked = allCheckbox.checked));
+
+            dialog.appendChild(form);
+
+            const actions = document.createElement('div');
+            actions.style.display = 'flex';
+            actions.style.justifyContent = 'flex-end';
+            actions.style.gap = '8px';
+            actions.style.marginTop = '12px';
+
+            const cancel = document.createElement('button');
+            cancel.className = 'btn btn-sm btn-gray-on-cream';
+            cancel.textContent = 'Cancel';
+            cancel.addEventListener('click', () => document.body.removeChild(overlay));
+
+            const ok = document.createElement('button');
+            ok.className = 'btn btn-sm btn-white-on-purple';
+            ok.textContent = 'Export';
+            ok.addEventListener('click', () => {
+                const selected = checks.filter(c => c.checked).map(c => c.dataset.key);
+                if (selected.length === 0) {
+                    showToast('Please select at least one column', true);
+                    return;
+                }
+                try {
+                    downloadHistoryCSV(selected);
+                    showToast('Export started');
+                } catch (e) {
+                    console.error(e);
+                    showToast('Export failed', true);
+                }
+                document.body.removeChild(overlay);
+            });
+
+            actions.appendChild(cancel);
+            actions.appendChild(ok);
+            dialog.appendChild(actions);
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+        }
+
+        function downloadHistoryCSV(columns) {
+            const rows = (filteredTransactions && filteredTransactions.length > 0) ? filteredTransactions : allTransactions;
+            if (!rows || rows.length === 0) {
+                showToast('No records to export', true);
+                return;
+            }
+
+            const header = columns.map(col => {
+                switch (col) {
+                    case 'user_name': return 'User';
+                    case 'type': return 'Type';
+                    case 'description': return 'Description';
+                    case 'value': return 'Amount';
+                    case 'timestamp': return 'Date & Time';
+                    default: return col;
+                }
+            });
+
+            const csv = [header.join(',')];
+            rows.forEach(r => {
+                const vals = columns.map(col => {
+                    let v = '';
+                    switch (col) {
+                        case 'user_name': v = r.user_name || ''; break;
+                        case 'type': v = getTransactionTypeLabel(r); break;
+                        case 'description': v = getTransactionDescription(r); break;
+                        case 'value': v = (r.value != null) ? r.value : ''; break;
+                        case 'timestamp': v = formatTimestamp(r.timestamp); break;
+                        default: v = r[col] || ''; break;
+                    }
+                    const s = String(v).replace(/"/g, '""');
+                    return (/[,\n"]/).test(s) ? '"' + s + '"' : s;
+                });
+                csv.push(vals.join(','));
+            });
+
+            const blob = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'history_export.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
     </script>
 
     <!-- App Footer -->

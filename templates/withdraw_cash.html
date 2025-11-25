@@ -73,18 +73,29 @@
     <script>
         let users = [];
         let selectedUser = null;
+        let userRole = null; // track role to decide toast vs modal
 
         function showMessage(text, isError = false) {
             const messageDiv = document.getElementById('message');
             messageDiv.textContent = text;
             messageDiv.className = 'message ' + (isError ? 'error' : 'success');
             messageDiv.style.display = 'block';
-            
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            
+            setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
+        }
+
+        function showToast(text, isError = false) {
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) { existingToast.remove(); }
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'error' : 'success'}`;
+            toast.textContent = text;
+            document.body.appendChild(toast);
+            setTimeout(() => { toast.classList.add('show'); }, 10);
             setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
+                toast.classList.remove('show');
+                setTimeout(() => { toast.remove(); }, 300);
+            }, 3000);
         }
 
         function resetForm() {
@@ -169,7 +180,7 @@
                 }
             } catch (error) {
                 console.error('Error loading users:', error);
-                showMessage('Error loading users. Please refresh the page.', true);
+                showToast('Error loading users. Please refresh the page.', true);
             }
         }
 
@@ -255,17 +266,22 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    // Reload users to get updated balances before showing confirmation
                     await loadUsers();
-                    const updatedUser = users.find(u => u.user_id == userId);
-                    showConfirmation(updatedUser || user, amount, result.new_balance);
+                    const updatedUser = users.find(u => u.user_id == userId) || user;
+                    const newBalance = result.new_balance;
+                    if (userRole === 'kid') {
+                        showConfirmation(updatedUser, amount, newBalance);
+                    } else {
+                        showToast(`${updatedUser.full_name} withdrew $${amount.toFixed(2)}.`);
+                    }
                     resetForm();
+                    submitBtn.disabled = false;
                 } else {
-                    showMessage(result.error || 'Error withdrawing cash', true);
+                    showToast(result.error || 'Error withdrawing cash', true);
                     submitBtn.disabled = false;
                 }
             } catch (error) {
-                showMessage('Network error. Please try again.', true);
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
                 submitBtn.disabled = false;
             }
@@ -316,11 +332,13 @@
                 
                 // Parents always have access
                 if (role === 'parent') {
+                    userRole = 'parent';
                     return;
                 }
                 
                 // Kids need permission check
                 if (role === 'kid') {
+                    userRole = 'kid';
                     try {
                         const settingsResponse = await fetch('/api/settings');
                         const settings = await settingsResponse.json();
@@ -335,6 +353,7 @@
                         return;
                     }
                 } else {
+                    userRole = role;
                     // No role set - redirect to home
                     window.location.href = '/';
                 }

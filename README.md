@@ -58,25 +58,14 @@ A web application for managing family chores, points, and rewards using Python a
 
 ## User Roles
 Parents have full control over what kids can access through granular permission settings.
-
-### Kid Role
-- Can view the home page (user list)
-- Can view chores list
-- Can view transaction history (if enabled by parent)
-- Can record chores (if enabled by parent)
-- Can redeem points (if enabled by parent)
-- Can withdraw cash (if enabled by parent)
-- Cannot add users, chores, or access settings
-- Cannot delete users or chores
-
-### Parent Role
-- Full access to all features
-- Requires PIN authentication (set via `PARENT_PIN` environment variable)
 - Can manage users, chores, and settings
 - Can record chores, redeem points, and withdraw cash
 
-## Quick Start
-
+### New / Recent Improvements
+- **CSV Export (Parent)**: Parents can now export the chores list (from the Chores page) and transaction history (History page) to CSV with a column-selection dialog. Exports respect any active filters.
+- **Standardized toasts**: High-level system and network messages are shown via top-center toasts for consistent feedback across pages.
+- **Layout tweak**: User cards on the Home page now use a Flexbox-based layout to stay centered (especially for 1–2 users).
+- **Backend deletion order**: When deleting a user, their transactions are removed first to avoid foreign-key constraint errors.
 ### Prerequisites
 - Docker
 - Docker Compose

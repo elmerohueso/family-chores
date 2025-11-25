@@ -17,8 +17,6 @@
         </header>
 
         <div class="card">
-            <div id="message" class="message"></div>
-
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('manual')">Manual Entry</button>
                 <button class="tab" onclick="switchTab('csv')">CSV Import</button>
@@ -122,27 +120,37 @@
                 document.getElementById('csv-tab').classList.add('active');
                 document.querySelectorAll('.tab')[1].classList.add('active');
             }
-
-            // Clear messages
-            document.getElementById('message').style.display = 'none';
         }
 
-        function showMessage(text, isError = false) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = text;
-            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
-            messageDiv.style.display = 'block';
-            
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            
+        function showToast(text, isError = false) {
+            // Remove any existing toast
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) {
+                existingToast.remove();
+            }
+
+            // Create new toast
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'error' : 'success'}`;
+            toast.textContent = text;
+            document.body.appendChild(toast);
+
+            // Trigger animation
             setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
+                toast.classList.add('show');
+            }, 10);
+
+            // Remove toast after 3 seconds
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3000);
         }
 
         function resetForm() {
             document.getElementById('choreForm').reset();
-            document.getElementById('message').style.display = 'none';
         }
 
         // Manual form submission
@@ -171,13 +179,13 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    showMessage(`Chore "${data.chore}" added successfully! Chore ID: ${result.chore_id}`);
+                    showToast(`Chore "${data.chore}" added successfully!`);
                     resetForm();
                 } else {
-                    showMessage(result.error || 'Error adding chore', true);
+                    showToast(result.error || 'Error adding chore', true);
                 }
             } catch (error) {
-                showMessage('Network error. Please try again.', true);
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
             }
         });
@@ -210,7 +218,7 @@
                 document.getElementById('csvFile').files = e.dataTransfer.files;
                 parseCSV(file);
             } else {
-                showMessage('Please select a CSV file', true);
+                showToast('Please select a CSV file', true);
             }
         });
 
@@ -221,7 +229,7 @@
                 const lines = text.split('\n').filter(line => line.trim());
                 
                 if (lines.length < 2) {
-                    showMessage('CSV file must have at least a header and one data row', true);
+                    showToast('CSV file must have at least a header and one data row', true);
                     return;
                 }
 
@@ -230,7 +238,7 @@
                 const requiredHeaders = ['chore', 'point_value'];
                 
                 if (!requiredHeaders.every(h => headers.includes(h))) {
-                    showMessage('CSV must have "chore" and "point_value" columns', true);
+                    showToast('CSV must have "chore" and "point_value" columns', true);
                     return;
                 }
 
@@ -252,7 +260,7 @@
                 }
 
                 if (csvData.length === 0) {
-                    showMessage('No valid rows found in CSV file', true);
+                    showToast('No valid rows found in CSV file', true);
                     return;
                 }
 
@@ -287,7 +295,7 @@
 
         async function importCSV() {
             if (!csvData || csvData.length === 0) {
-                showMessage('No data to import', true);
+                showToast('No data to import', true);
                 return;
             }
 
@@ -303,13 +311,13 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    showMessage(`Successfully imported ${result.imported} chore(s)! ${result.errors > 0 ? `${result.errors} error(s) occurred.` : ''}`);
+                    showToast(`Successfully imported ${result.imported} chore(s)!${result.errors > 0 ? ` ${result.errors} error(s) occurred.` : ''}`);
                     clearCSV();
                 } else {
-                    showMessage(result.error || 'Error importing chores', true);
+                    showToast(result.error || 'Error importing chores', true);
                 }
             } catch (error) {
-                showMessage('Network error. Please try again.', true);
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
             }
         }

@@ -32,7 +32,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '1.2.0'
+__version__ = '1.2.1'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -376,7 +376,8 @@ def get_chores():
     """Get all chores. All chores are visible, but those with requires_approval=True are greyed out for kids."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT * FROM chores')
+    # Return chores ordered by point value ascending by default
+    cursor.execute('SELECT * FROM chores ORDER BY point_value, chores ASC')
     chores = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -936,7 +937,14 @@ def delete_user(user_id):
     # Note: Transactions are kept for historical purposes - they reference user_id
     # which will become orphaned. The user record is deleted but transactions remain.
     # If you want to delete transactions too, uncomment the line below:
-    # cursor.execute('DELETE FROM transactions WHERE user_id = %s', (user_id,))
+    # Delete transactions first to avoid foreign key issues, then balances.
+    try:
+        cursor.execute('DELETE FROM transactions WHERE user_id = %s', (user_id,))
+        deleted_tx = cursor.rowcount
+    except Exception:
+        # If transactions table or FK constraints behave differently, ignore and continue
+        deleted_tx = None
+
     cursor.execute('DELETE FROM cash_balances WHERE user_id = %s', (user_id,))
     
     # Delete user
