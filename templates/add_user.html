@@ -60,17 +60,28 @@
         let selectedAvatarFile = null;
 
         function showMessage(text, isError = false) {
+            // Retained for pre-submission validation (e.g., avatar file issues)
             messageDiv.textContent = text;
             messageDiv.className = 'message ' + (isError ? 'error' : 'success');
             messageDiv.style.display = 'block';
-            
-            // Scroll to top to show message
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            
-            // Hide message after 5 seconds
+            setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
+        }
+
+        function showToast(text, isError = false) {
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) {
+                existingToast.remove();
+            }
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'error' : 'success'}`;
+            toast.textContent = text;
+            document.body.appendChild(toast);
+            setTimeout(() => { toast.classList.add('show'); }, 10);
             setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
+                toast.classList.remove('show');
+                setTimeout(() => { toast.remove(); }, 300);
+            }, 3000);
         }
 
         function previewAvatar(event) {
@@ -167,28 +178,28 @@
                             const avatarResult = await avatarResponse.json();
 
                             if (avatarResponse.ok) {
-                                showMessage(`User "${data.full_name}" added successfully with avatar! User ID: ${userId}`);
+                                showToast(`User "${data.full_name}" added successfully with avatar! User ID: ${userId}`);
                             } else {
                                 // User created but avatar upload failed
-                                showMessage(`User "${data.full_name}" added successfully, but avatar upload failed: ${avatarResult.error || 'Unknown error'}. User ID: ${userId}`);
+                                showToast(`User "${data.full_name}" added successfully, but avatar upload failed: ${avatarResult.error || 'Unknown error'}. User ID: ${userId}`);
                             }
                         } catch (avatarError) {
                             // User created but avatar upload failed
-                            showMessage(`User "${data.full_name}" added successfully, but avatar upload failed. User ID: ${userId}`);
+                            showToast(`User "${data.full_name}" added successfully, but avatar upload failed. User ID: ${userId}`);
                             console.error('Avatar upload error:', avatarError);
                         }
                     } else {
                         // User created without avatar
-                        showMessage(`User "${data.full_name}" added successfully! User ID: ${userId}`);
+                        showToast(`User "${data.full_name}" added successfully! User ID: ${userId}`);
                     }
 
                     // Reset form after successful creation
                     resetForm();
                 } else {
-                    showMessage(result.error || result.message || 'Error adding user', true);
+                    showToast(result.error || result.message || 'Error adding user', true);
                 }
             } catch (error) {
-                showMessage('Network error. Please try again.', true);
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
             }
         });

@@ -5,3 +5,4 @@ css_class_usage.txt
 analyze_classes.py
 check_missing_classes.py
 check_unused_classes.py
+.github/workflows/copilot-instructions.md
