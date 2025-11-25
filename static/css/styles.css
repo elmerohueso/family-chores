@@ -549,54 +549,35 @@ header h1 {
 }
 
 /* Unified Text Hierarchy */
-.title,
-.confirmation-title,
-.role-selection-title,
-.setting-title,
-.chores-section-title,
-.reset-section-title {
+.text-title {
     font-size: 24px;
     font-weight: 600;
     color: #333;
     margin-bottom: 12px;
 }
 
-.title-sm,
-.setting-title,
-.chores-section-title,
-.reset-section-title {
+.text-title-sm {
     font-size: 18px;
+    font-weight: 600;
+    color: #333;
     margin-bottom: 20px;
 }
 
-.title-md,
-.confirmation-title {
-    font-size: 24px;
-}
-
-.subtitle,
-.setting-subtitle {
+.text-subtitle {
     font-size: 16px;
     color: #666;
     font-weight: 600;
 }
 
-.text-body,
-.confirmation-message,
-.role-selection-message,
-.setting-description {
+.text-body {
     font-size: 16px;
     color: #666;
     line-height: 1.5;
-}
-
-.confirmation-message,
-.role-selection-message {
-    margin-bottom: 30px;
-}
-
-.setting-description {
     margin-bottom: 16px;
+}
+
+.text-body-lg {
+    margin-bottom: 30px;
 }
 
 /* Unified Form Elements */

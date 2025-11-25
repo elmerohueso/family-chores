@@ -24,13 +24,13 @@
                 <form id="settingsForm">
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Automatic Daily Cash Out</span>
+                            <span class="text-title-sm">Automatic Daily Cash Out</span>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="automaticDailyCashOut">
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
-                        <div class="setting-description">
+                        <div class="text-body">
                             When enabled, excess points (above Max Rollover Points) are automatically converted to cash at the configured time at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
                         </div>
                         <div class="input-group" style="margin-top: 12px;">
@@ -42,9 +42,9 @@
 
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Max Rollover Points</span>
+                            <span class="text-title-sm">Max Rollover Points</span>
                         </div>
-                        <div class="setting-description">
+                        <div class="text-body">
                             Maximum number of points that can be carried over to the next day. Points above this amount will be converted to cash (if Automatic Daily Cash Out is enabled) or capped at this amount (if disabled).
                         </div>
                         <div class="input-group" style="margin-top: 12px;">
@@ -59,9 +59,9 @@
 
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Chore Cooldown Periods</span>
+                            <span class="text-title-sm">Chore Cooldown Periods</span>
                         </div>
-                        <div class="setting-description">
+                        <div class="text-body">
                             Specify how long chores should be on cooldown after being completed, based on their repeat interval. This prevents the same chore from being recorded too frequently.
                         </div>
                         <div style="margin-top: 16px;">
@@ -85,9 +85,9 @@
 
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Kid Permissions</span>
+                            <span class="text-title-sm">Kid Permissions</span>
                         </div>
-                        <div class="setting-subtitle">
+                        <div class="text-subtitle">
                             Kids can:
                         </div>
                         <div style="margin-top: 16px;">
@@ -124,7 +124,7 @@
 
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Email Notifications</span>
+                            <span class="text-title-sm">Email Notifications</span>
                         </div>
                         <div style="margin-top: 16px;">
                             <div class="input-group" style="margin-bottom: 12px;">
@@ -161,7 +161,7 @@
                                 
                             </div>
                                 <div class="setting-label" style="margin-bottom: 16px;">
-                                    <div class="setting-subtitle">
+                                    <div class="text-subtitle">
                                         Notify immediately when:
                                     </div>
                                     </div>
@@ -187,13 +187,13 @@
                                     </label>
                                 </div>
                                 <div class="setting-label" style="margin-bottom: 16px;">
-                                    <span class="setting-subtitle">Daily Digest</span>
+                                    <span class="text-subtitle">Daily Digest</span>
                                     <label class="toggle-switch">
                                         <input type="checkbox" id="emailNotifyDailyDigest">
                                         <span class="toggle-slider"></span>
                                     </label>
                                 </div>
-                                <div class="setting-description">
+                                <div class="text-body">
                                     Daily digest sent at midnight with today's history and current balances
                                 </div>
                     
@@ -210,7 +210,7 @@
 
                 <div class="chores-section">
                     <div class="chores-section-header">
-                        <div class="chores-section-title" onclick="toggleChoresSection()">
+                        <div class="text-title-sm" onclick="toggleChoresSection()">
                             <span class="chores-toggle-icon" id="choresToggleIcon">▶</span>
                             <span>Chore Management</span>
                         </div>
@@ -260,7 +260,7 @@
 
                 <div class="chores-section">
                     <div class="chores-section-header">
-                        <div class="chores-section-title" onclick="toggleUsersSection()">
+                        <div class="text-title-sm" onclick="toggleUsersSection()">
                             <span class="chores-toggle-icon" id="usersToggleIcon">▶</span>
                             <span>User Management</span>
                         </div>
@@ -305,7 +305,7 @@
                 </div>
 
                 <div class="reset-section">
-                    <div class="reset-section-title">DANGER ZONE!</div>
+                    <div class="text-title-sm">DANGER ZONE!</div>
                     <div class="reset-buttons">
                         <button class="btn btn-red-on-white" onclick="confirmResetPoints()">Reset All Points Balances</button>
                         <button class="btn btn-red-on-white" onclick="confirmResetCash()">Reset All Cash Balances</button>
@@ -318,8 +318,8 @@
         <!-- Confirmation Dialog -->
         <div id="confirmationDialog" class="overlay">
             <div class="overlay-content">
-                <div class="confirmation-title" id="confirmTitle">Confirm Reset</div>
-                <div class="confirmation-message" id="confirmMessage"></div>
+                <div class="text-title" id="confirmTitle">Confirm Reset</div>
+                <div class="text-body text-body-lg" id="confirmMessage"></div>
                 <div class="confirmation-buttons">
                     <button class="btn btn-red-on-white btn-md" id="confirmBtn" onclick="executeReset()">Confirm</button>
                     <button class="btn btn-gray-on-cream btn-md" onclick="closeConfirmation()">Cancel</button>
