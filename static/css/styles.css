@@ -465,7 +465,6 @@ header h1 {
 }
 
 .btn-delete:hover {
-    background: #c82333;
     transform: scale(1.1);
 }
 
@@ -509,11 +508,7 @@ header h1 {
 }
 
 /* Unified Modal/Overlay System */
-.overlay,
-.confirmation-popup,
-.role-selection-overlay,
-.avatar-upload-overlay,
-.confirmation-dialog {
+.overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -526,28 +521,20 @@ header h1 {
     z-index: 10000;
 }
 
-.overlay.show,
-.confirmation-popup.show,
-.role-selection-overlay.show,
-.avatar-upload-overlay.show,
-.confirmation-dialog.show {
+.overlay.show {
     display: flex;
 }
 
-.role-selection-overlay {
+.overlay.hidden {
+    display: none;
+}
+
+.overlay-dark {
     background: rgba(0, 0, 0, 0.7);
     z-index: 20000;
 }
 
-.overlay.hidden,
-.role-selection-overlay.hidden {
-    display: none;
-}
-
-.modal-content,
-.confirmation-content,
-.role-selection-content,
-.avatar-upload-content {
+.overlay-content {
     background: white;
     border-radius: 16px;
     padding: 40px;
@@ -557,7 +544,7 @@ header h1 {
     text-align: center;
 }
 
-.role-selection-content {
+.overlay-dark .overlay-content {
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
