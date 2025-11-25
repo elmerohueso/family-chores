@@ -12,7 +12,7 @@
         <header>
             <div class="system-info">
                 <div style="text-align: center; width: 100%;">
-                    <div class="system-time-label">System Time</div>
+                    <div class="label-sm">System Time</div>
                     <div class="system-time-value" id="systemTimeInfo">--:-- --</div>
                 </div>
             </div>
@@ -339,9 +339,9 @@
                             }
                             <div class="user-name" style="position: relative; z-index: 2;">${escapeHtml(user.full_name)}</div>
                             <div class="balance points" style="position: relative; z-index: 2;">${user.balance || 0}</div>
-                            <div class="balance-label" style="position: relative; z-index: 2;">Points Balance</div>
+                            <div class="label-sm" style="position: relative; z-index: 2;">Points Balance</div>
                             <div class="balance cash" style="position: relative; z-index: 2;">$${(user.cash_balance || 0).toFixed(2)}</div>
-                            <div class="balance-label" style="position: relative; z-index: 2;">Cash Balance</div>
+                            <div class="label-sm" style="position: relative; z-index: 2;">Cash Balance</div>
                             <div class="user-actions">
                                 ${getRole() !== 'kid' ? `
                                     <a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>
