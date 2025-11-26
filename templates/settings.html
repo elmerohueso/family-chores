@@ -129,7 +129,7 @@
                         <div style="margin-top: 16px;">
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSmtpServer" style="min-width: 150px;" class="setting-name">SMTP Server:</label>
-                                <input type="text" id="emailSmtpServer" class="form-input" style="width: 300px;" placeholder="smtp.gmail.com">
+                                <input type="text" id="emailSmtpServer" class="form-input" style="max-width: 300px; flex: 1;" placeholder="smtp.gmail.com">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSmtpPort" style="min-width: 150px;" class="setting-name">SMTP Port:</label>
@@ -138,20 +138,20 @@
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailUsername" style="min-width: 150px;" class="setting-name">Username:</label>
-                                <input type="text" id="emailUsername" class="form-input" style="width: 300px;" placeholder="your.email@example.com">
+                                <input type="text" id="emailUsername" class="form-input" style="max-width: 300px; flex: 1;" placeholder="your.email@example.com">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailPassword" style="min-width: 150px;" class="setting-name">Password:</label>
-                                <input type="password" id="emailPassword" class="form-input" style="width: 300px;" placeholder="Leave empty to keep existing">
+                                <input type="password" id="emailPassword" class="form-input" style="max-width: 300px; flex: 1;" placeholder="Leave empty to keep existing">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSenderName" style="min-width: 150px;" class="setting-name">Sender Name:</label>
-                                <input type="text" id="emailSenderName" class="form-input" style="width: 300px;" placeholder="Family Chores">
+                                <input type="text" id="emailSenderName" class="form-input" style="max-width: 300px; flex: 1;" placeholder="Family Chores">
                             </div>
                             <div style="margin-top: 16px;">
                                 <div class="input-group" style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
                                     <label for="parentEmailAddresses" style="min-width: 150px;" class="setting-name">Parent Address(es):</label>
-                                    <input type="text" id="parentEmailAddresses" class="form-input" style="width: 300px;" placeholder="email1@example.com, email2@example.com">
+                                    <input type="text" id="parentEmailAddresses" class="form-input" style="max-width: 300px; flex: 1;" placeholder="email1@example.com, email2@example.com">
                                 </div>
                                 <div style="text-align: right; margin-bottom: 12px;">
                                     <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>

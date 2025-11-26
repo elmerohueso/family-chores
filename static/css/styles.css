@@ -1092,6 +1092,14 @@ button:disabled:hover {
     display: flex;
     gap: 8px;
     align-items: center;
+    flex-wrap: wrap;
+}
+
+.input-group input[type="text"],
+.input-group input[type="number"],
+.input-group input[type="password"],
+.input-group input[type="time"] {
+    min-width: 0;
 }
 
 /* Unified Quick Select - applies to both points and cash */
