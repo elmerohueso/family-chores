@@ -768,10 +768,6 @@
                                     <option value="monthly" ${chore.repeat === 'monthly' ? 'selected' : ''}>Monthly</option>
                                     <option value="" ${!chore.repeat ? 'selected' : ''}>None</option>
                                 </select>
-                                <div class="edit-actions">
-                                    <button class="btn btn-green-on-mint btn-sm" onclick="saveChore(${chore.chore_id})">Save</button>
-                                    <button class="btn btn-gray-on-cream btn-sm" onclick="cancelChoreEdit()">Cancel</button>
-                                </div>
                             </td>
                             <td>
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -824,12 +820,70 @@
             } else if (field === 'requires_approval') {
                 document.getElementById(`edit-requires-${choreId}`)?.focus();
             }
+                        // Show floating popover with Save/Cancel under the edited row
+                        showEditActionsPopover(choreId);
         }
 
-        function cancelChoreEdit() {
-            editingChoreId = null;
-            renderChoresTable();
-        }
+                function cancelChoreEdit() {
+                        editingChoreId = null;
+                        hideEditActionsPopover();
+                        renderChoresTable();
+                }
+
+                let editPopoverEl = null;
+                let editPopoverHandlersBound = false;
+                function ensureEditPopover() {
+                    if (!editPopoverEl) {
+                        editPopoverEl = document.createElement('div');
+                        editPopoverEl.id = 'editActionsPopover';
+                        Object.assign(editPopoverEl.style, {
+                            position: 'absolute', zIndex: '1000', background: '#fff', border: '1px solid #e0e0e0',
+                            boxShadow: '0 6px 20px rgba(0,0,0,0.12)', borderRadius: '10px', padding: '10px', display: 'none'
+                        });
+                        document.body.appendChild(editPopoverEl);
+                    }
+                }
+                function positionEditPopoverForRow(rowEl) {
+                    if (!editPopoverEl || !rowEl) return;
+                    const rect = rowEl.getBoundingClientRect();
+                    editPopoverEl.style.display = 'block';
+                    editPopoverEl.style.width = 'auto';
+                    const popRect = editPopoverEl.getBoundingClientRect();
+                    const top = window.scrollY + rect.bottom + 8;
+                    let left = window.scrollX + rect.left + (rect.width - popRect.width) / 2;
+                    const maxLeft = window.scrollX + document.documentElement.clientWidth - popRect.width - 8;
+                    left = Math.max(window.scrollX + 8, Math.min(left, maxLeft));
+                    editPopoverEl.style.top = `${top}px`;
+                    editPopoverEl.style.left = `${left}px`;
+                }
+                function showEditActionsPopover(choreId) {
+                    ensureEditPopover();
+                    editPopoverEl.innerHTML = `<div style="display:flex; gap:8px; align-items:center; justify-content:center;">
+                        <button class="btn btn-green-on-mint btn-sm" onclick="saveChore(${choreId})">Save</button>
+                        <button class="btn btn-gray-on-cream btn-sm" onclick="cancelChoreEdit()">Cancel</button>
+                    </div>`;
+                    const rowEl = document.querySelector(`#choresTableBody tr[data-chore-id="${choreId}"]`);
+                    positionEditPopoverForRow(rowEl);
+                    if (!editPopoverHandlersBound) {
+                        window.addEventListener('scroll', onEditPopoverReposition, { passive: true });
+                        window.addEventListener('resize', onEditPopoverReposition);
+                        editPopoverHandlersBound = true;
+                    }
+                    editPopoverEl.dataset.targetChoreId = String(choreId);
+                }
+                function onEditPopoverReposition() {
+                    if (!editPopoverEl || editPopoverEl.style.display === 'none') return;
+                    const id = editPopoverEl.dataset.targetChoreId;
+                    if (!id) return;
+                    const rowEl = document.querySelector(`#choresTableBody tr[data-chore-id="${id}"]`);
+                    if (rowEl) positionEditPopoverForRow(rowEl);
+                }
+                function hideEditActionsPopover() {
+                    if (editPopoverEl) {
+                        editPopoverEl.style.display = 'none';
+                        editPopoverEl.dataset.targetChoreId = '';
+                    }
+                }
 
         async function saveChore(choreId) {
             const choreInput = document.getElementById(`edit-chore-${choreId}`);
@@ -878,6 +932,7 @@
 
                 if (response.ok) {
                     showToast('Chore updated successfully!');
+                    hideEditActionsPopover();
                     editingChoreId = null;
                     await loadChores();
                     // Restore scroll position
