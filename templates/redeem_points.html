@@ -6,6 +6,7 @@
     <title>Redeem Points - Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
 </head>
 <body>
     <div class="container container-sm">
@@ -181,11 +182,6 @@
             document.getElementById('submitBtn').disabled = !canSubmit;
         }
 
-        function getUrlParameter(name) {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get(name);
-        }
-
         async function loadUsers() {
             try {
                 const response = await fetch('/api/users');
@@ -201,14 +197,8 @@
                     userSelect.appendChild(option);
                 });
 
-                // Pre-select user from URL parameter
-                const userIdParam = getUrlParameter('user_id');
-                if (userIdParam) {
-                    userSelect.value = userIdParam;
-                    // Trigger change event to update balance display and preview
-                    const changeEvent = new Event('change');
-                    userSelect.dispatchEvent(changeEvent);
-                }
+                // Pre-select user from URL parameter (also cleans URL)
+                preSelectUserFromUrl('user_id');
             } catch (error) {
                 console.error('Error loading users:', error);
                 showToast('Error loading users. Please refresh the page.', true);

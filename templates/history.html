@@ -6,6 +6,7 @@
     <title>History - Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
 </head>
 <body>
     <div class="container">
@@ -361,17 +362,13 @@
             }, 3000);
         }
 
-        function getUrlParameter(name) {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get(name);
-        }
-
         async function loadHistory() {
             try {
                 // Check for user_id filter in URL
-                const userIdParam = getUrlParameter('user_id');
-                if (userIdParam) {
-                    filterUserId = parseInt(userIdParam);
+                filterUserId = getUserFilterFromUrl();
+                // Clean URL after capturing filter
+                if (filterUserId) {
+                    cleanUrl();
                 }
 
                 const response = await fetch('/api/transactions');

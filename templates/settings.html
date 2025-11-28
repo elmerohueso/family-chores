@@ -6,6 +6,7 @@
     <title>Settings - Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
 </head>
 <body>
     <div class="container">
@@ -1326,6 +1327,9 @@
 
         // Check role on page load - redirect kids
         window.addEventListener('DOMContentLoaded', async () => {
+            // Clean URL to show base path only
+            cleanUrl();
+            
             try {
                 const response = await fetch('/api/get-role');
                 const result = await response.json();

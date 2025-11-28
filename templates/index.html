@@ -6,6 +6,7 @@
     <title>Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
 </head>
 <body>
     <div class="container">
@@ -272,6 +273,9 @@
 
         // Show role selection on page load if not already selected
         window.addEventListener('DOMContentLoaded', async () => {
+            // Clean URL to show base path only
+            cleanUrl();
+            
             // Load kid permissions first
             await loadKidPermissions();
             
