@@ -14,8 +14,29 @@ function getRole() {
  * Set current user role in localStorage
  * @param {string} role - 'parent' or 'kid'
  */
-function setRole(role) {
+function setLocalRole(role) {
     localStorage.setItem('userRole', role);
+}
+
+/**
+ * Set role in session on server
+ * @param {string} role - 'parent', 'kid', or '' to clear
+ * @returns {Promise<boolean>} True if successful, false otherwise
+ */
+async function setServerRole(role) {
+    try {
+        const response = await fetch('/api/set-role', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ role: role })
+        });
+        return response.ok;
+    } catch (error) {
+        console.error('Error setting role on server:', error);
+        return false;
+    }
 }
 
 /**
@@ -136,24 +157,41 @@ async function getUsers() {
     }
 }
 
-/**
- * Logout the current user (clears role and reloads page)
- */
-async function logout() {
-    // Clear the role from localStorage
-    localStorage.removeItem('userRole');
-    // Clear role from session on server
+async function setServerRole(role) {
+    // Set role in session on server
     try {
-        await fetch('/api/set-role', {
+        const response = await fetch('/api/set-role', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ role: '' })
+            body: JSON.stringify({ role: role })
         });
+
+        if (response.ok) {
+            setLocalRole(role);
+            // Reload permissions in case settings changed
+            permissions = await getPermissions();
+                const roleOverlay = document.getElementById('roleSelectionOverlay');
+                roleOverlay.classList.remove('show');
+                roleOverlay.classList.add('hidden');
+            applyRoleRestrictions();
+            // Load users after role is set to apply restrictions
+            loadUsers();
+        } else {
+            console.error('Failed to set role on server');
+        }
     } catch (error) {
-        console.error('Error clearing role:', error);
+        console.error('Error setting role:', error);
     }
+}
+
+/**
+ * Logout the current user (clears role and reloads page)
+ */
+async function logout() {
+    // Clear role from session on server
+    await setServerRole('');
     // Reload the page to show role selection again
     window.location.reload();
 }

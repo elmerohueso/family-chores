@@ -162,33 +162,21 @@
         }
 
         async function selectRole(role) {
-            // Set role in session on server
-            try {
-                const response = await fetch('/api/set-role', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ role: role })
-                });
-
-                if (response.ok) {
-                    setRole(role);
-                    // Reload permissions in case settings changed
-                    permissions = await getPermissions();
-                        const roleOverlay = document.getElementById('roleSelectionOverlay');
-                        roleOverlay.classList.remove('show');
-                        roleOverlay.classList.add('hidden');
-                    applyRoleRestrictions();
-                    // Load users after role is set to apply restrictions
-                    loadUsers();
-                } else {
-                    console.error('Failed to set role on server');
-                }
-            } catch (error) {
-                console.error('Error setting role:', error);
+            const success = await setServerRole(role);
+            if (success) {
+                setLocalRole(role);
+                // Reload permissions in case settings changed
+                permissions = await getPermissions();
+                const roleOverlay = document.getElementById('roleSelectionOverlay');
+                roleOverlay.classList.remove('show');
+                roleOverlay.classList.add('hidden');
+                applyRoleRestrictions();
+                // Load users after role is set to apply restrictions
+                loadUsers();
+                loadAppFooter();
+            } else {
+                console.error('Failed to set role on server');
             }
-            loadAppFooter();
         }
 
         // logout is now defined in static/js/utils.js
