@@ -415,32 +415,16 @@
         let serverTimeBase = null; // Base server time components [hours, minutes, seconds] when last synced
         let serverTimeBaseMs = 0; // Browser time (ms) when we last synced
         
-        async function syncServerTime() {
-            try {
-                const response = await fetch('/api/system-time');
-                const data = await response.json();
-                
-                // Parse the ISO timestamp string directly to get server time components
-                // Format: "2024-01-15T12:30:00-07:00" or "2024-01-15T12:30:00"
-                const timestamp = data.timestamp;
-                const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-                
-                if (match) {
-                    const hours = parseInt(match[4]);
-                    const minutes = parseInt(match[5]);
-                    const seconds = parseInt(match[6]);
-                    
-                    serverTimeBase = [hours, minutes, seconds];
-                    serverTimeBaseMs = Date.now();
-                }
-                
-                // Update display immediately
-                updateSystemTimeDisplay();
-            } catch (error) {
-                console.error('Error syncing server time:', error);
-                // On error, fallback to browser time
-                serverTimeBase = null;
+        // syncServerTime moved to static/js/utils.js
+        async function applyServerTimeSync() {
+            const result = await syncServerTime();
+            if (result) {
+                serverTimeBase = [result.hours, result.minutes, result.seconds];
+                serverTimeBaseMs = result.nowMs;
+            } else {
+                serverTimeBase = null; // Fallback handled in display function
             }
+            updateSystemTimeDisplay();
         }
         
         function updateSystemTimeDisplay() {
@@ -485,8 +469,8 @@
         }
 
         // Sync with server on load and every 30 minutes to prevent drift
-        syncServerTime();
-        setInterval(syncServerTime, 30 * 60 * 1000); // Sync every 30 minutes
+        applyServerTimeSync();
+        setInterval(applyServerTimeSync, 30 * 60 * 1000); // Sync every 30 minutes
         
         // Update display every second
         setInterval(updateSystemTimeDisplay, 1000);

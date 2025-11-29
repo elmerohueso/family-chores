@@ -168,3 +168,28 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+/**
+ * Sync system time with server and return time components.
+ * Does not touch the DOM; caller can update UI.
+ * @returns {Promise<{hours:number, minutes:number, seconds:number, nowMs:number}|null>}
+ */
+async function syncServerTime() {
+    try {
+        const response = await fetch('/api/system-time');
+        const data = await response.json();
+
+        const timestamp = data.timestamp; // ISO string
+        const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+        if (match) {
+            const hours = parseInt(match[4]);
+            const minutes = parseInt(match[5]);
+            const seconds = parseInt(match[6]);
+            return { hours, minutes, seconds, nowMs: Date.now() };
+        }
+        return null;
+    } catch (error) {
+        console.error('Error syncing server time:', error);
+        return null;
+    }
+}
