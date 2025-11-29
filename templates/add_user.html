@@ -60,14 +60,7 @@
         const messageDiv = document.getElementById('message');
         let selectedAvatarFile = null;
 
-        function showMessage(text, isError = false) {
-            // Retained for pre-submission validation (e.g., avatar file issues)
-            messageDiv.textContent = text;
-            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
-            messageDiv.style.display = 'block';
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
-        }
+        // showMessage is now provided by static/js/utils.js
 
         function showToast(text, isError = false) {
             const existingToast = document.querySelector('.toast');

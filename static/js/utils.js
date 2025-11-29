@@ -308,6 +308,23 @@ async function uploadAvatar(user_id, selectedAvatarFile) {
     }
 
 /**
+ * Show a page-level message in a target element.
+ * Defaults to element with id `message` and auto-hides after 5s.
+ * @param {string} text - Message text
+ * @param {boolean} [isError=false] - Whether to show error styling
+ * @param {string} [elementId='message'] - Target element id
+ */
+function showMessage(text, isError = false, elementId = 'message') {
+    const messageDiv = document.getElementById(elementId);
+    if (!messageDiv) return;
+    messageDiv.textContent = text;
+    messageDiv.className = 'message ' + (isError ? 'error' : 'success');
+    messageDiv.style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
+}
+
+/**
  * Preview avatar image with file validation
  * @param {Event} event - File input change event
  * @param {Object} config - Configuration object

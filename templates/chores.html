@@ -172,17 +172,6 @@
 
         // escapeHtml moved to static/js/utils.js
 
-        function showMessage(text, isError = false) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = text;
-            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
-            messageDiv.style.display = 'block';
-            
-            setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 3000);
-        }
-
         // showToast: use global `showToast` if available, otherwise create a simple toast.
         function showToast(text, isError = false) {
             if (typeof window.showToast === 'function' && window.showToast !== showToast) {

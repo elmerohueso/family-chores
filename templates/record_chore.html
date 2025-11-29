@@ -70,14 +70,7 @@
         let userRole = null;
         let selectedChore = null;
 
-        function showMessage(text, isError = false) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = text;
-            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
-            messageDiv.style.display = 'block';
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
-        }
+        // showMessage is now provided by static/js/utils.js
 
         function showToast(text, isError = false) {
             const existingToast = document.querySelector('.toast');
