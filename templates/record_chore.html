@@ -72,19 +72,7 @@
 
         // showMessage is now provided by static/js/utils.js
 
-        function showToast(text, isError = false) {
-            const existingToast = document.querySelector('.toast');
-            if (existingToast) { existingToast.remove(); }
-            const toast = document.createElement('div');
-            toast.className = `toast ${isError ? 'error' : 'success'}`;
-            toast.textContent = text;
-            document.body.appendChild(toast);
-            setTimeout(() => { toast.classList.add('show'); }, 10);
-            setTimeout(() => {
-                toast.classList.remove('show');
-                setTimeout(() => { toast.remove(); }, 300);
-            }, 3000);
-        }
+        // showToast is now provided by static/js/utils.js
 
         function showConfirmation(user, chore, points) {
             const popup = document.getElementById('confirmationPopup');

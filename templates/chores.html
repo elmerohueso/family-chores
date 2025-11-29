@@ -172,23 +172,7 @@
 
         // escapeHtml moved to static/js/utils.js
 
-        // showToast: use global `showToast` if available, otherwise create a simple toast.
-        function showToast(text, isError = false) {
-            if (typeof window.showToast === 'function' && window.showToast !== showToast) {
-                try { window.showToast(text, isError); return; } catch (e) { /* fallthrough */ }
-            }
-
-            const toast = document.createElement('div');
-            toast.className = 'toast' + (isError ? ' toast-error' : '');
-            toast.textContent = text;
-            // Position using existing .toast rules in stylesheet (top-center)
-            document.body.appendChild(toast);
-            // Remove after 3s
-            setTimeout(() => {
-                toast.classList.add('toast-hide');
-                setTimeout(() => { try { document.body.removeChild(toast); } catch (e) {} }, 400);
-            }, 3000);
-        }
+        // showToast is now provided by static/js/utils.js
 
         function updateSortIndicator(column) {
             // Clear all indicators

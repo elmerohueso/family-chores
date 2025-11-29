@@ -341,32 +341,7 @@
     <script>
         // showMessage is now provided by static/js/utils.js
 
-        function showToast(text, isError = false) {
-            // Remove any existing toast
-            const existingToast = document.querySelector('.toast');
-            if (existingToast) {
-                existingToast.remove();
-            }
-
-            // Create new toast
-            const toast = document.createElement('div');
-            toast.className = `toast ${isError ? 'error' : 'success'}`;
-            toast.textContent = text;
-            document.body.appendChild(toast);
-
-            // Trigger animation
-            setTimeout(() => {
-                toast.classList.add('show');
-            }, 10);
-
-            // Remove toast after 3 seconds
-            setTimeout(() => {
-                toast.classList.remove('show');
-                setTimeout(() => {
-                    toast.remove();
-                }, 300);
-            }, 3000);
-        }
+        // showToast is now provided by static/js/utils.js
 
         function resetForm() {
             loadSettings();

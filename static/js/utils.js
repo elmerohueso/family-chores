@@ -325,6 +325,27 @@ function showMessage(text, isError = false, elementId = 'message') {
 }
 
 /**
+ * Show a transient toast notification at top-center.
+ * @param {string} text - Message text
+ * @param {boolean} [isError=false] - Error styling when true, success otherwise
+ */
+function showToast(text, isError = false) {
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) {
+        try { existingToast.remove(); } catch (e) {}
+    }
+    const toast = document.createElement('div');
+    toast.className = `toast ${isError ? 'error' : 'success'}`;
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.classList.add('show'); }, 10);
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => { try { toast.remove(); } catch (e) {} }, 300);
+    }, 3000);
+}
+
+/**
  * Preview avatar image with file validation
  * @param {Event} event - File input change event
  * @param {Object} config - Configuration object
