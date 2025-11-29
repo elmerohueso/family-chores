@@ -75,7 +75,7 @@
             <img id="avatarPreview" class="avatar-preview-image" alt="Preview">
             <div class="file-input-wrapper">
                 <label for="avatarFile" class="label-button">Choose Image</label>
-                <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="previewAvatar(event)">
+                <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="handleAvatarPreview(event)">
             </div>
             <div class="avatar-upload-actions">
                 <button class="btn btn-white-on-purple" onclick="processAvatar()" id="uploadBtn" disabled>Upload</button>
@@ -318,26 +318,21 @@
             selectedAvatarFile = null;
         }
 
-        function previewAvatar(event) {
-            const file = event.target.files[0];
-            if (file) {
-                if (file.size > 5 * 1024 * 1024) {
-                    showAvatarMessage('File too large. Maximum size is 5MB', true);
-                    event.target.value = '';
-                    return;
-                }
-                
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const preview = document.getElementById('avatarPreview');
-                    preview.src = e.target.result;
-                    preview.classList.add('show');
+        function handleAvatarPreview(event) {
+            previewAvatar(event, {
+                previewElementId: 'avatarPreview',
+                fileInputId: 'avatarFile',
+                onSuccess: (file) => {
                     selectedAvatarFile = file;
                     document.getElementById('uploadBtn').disabled = false;
                     document.getElementById('avatarMessage').style.display = 'none';
-                };
-                reader.readAsDataURL(file);
-            }
+                },
+                onError: (message) => {
+                    showAvatarMessage(message, true);
+                    selectedAvatarFile = null;
+                    document.getElementById('uploadBtn').disabled = true;
+                }
+            });
         }
 
         function showAvatarMessage(text, isError = false) {

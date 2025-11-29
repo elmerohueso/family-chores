@@ -39,7 +39,7 @@
                     <div class="avatar-upload-controls">
                         <div class="file-input-wrapper">
                             <label for="avatarFile" class="label-button">Choose Avatar Image</label>
-                            <input type="file" id="avatarFile" name="avatar" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="previewAvatar(event)">
+                            <input type="file" id="avatarFile" name="avatar" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="handleAvatarPreview(event)">
                         </div>
                         <button type="button" class="remove-avatar-btn" id="removeAvatarBtn" onclick="removeAvatar()" style="display: none;">Remove Avatar</button>
                         <div class="help-text">Supported formats: PNG, JPG, JPEG, GIF, WEBP. Maximum size: 5MB</div>
@@ -85,40 +85,20 @@
             }, 3000);
         }
 
-        function previewAvatar(event) {
-            const file = event.target.files[0];
-            if (file) {
-                // Check file size (5MB limit)
-                if (file.size > 5 * 1024 * 1024) {
-                    showMessage('File too large. Maximum size is 5MB', true);
-                    event.target.value = '';
-                    selectedAvatarFile = null;
-                    hideAvatarPreview();
-                    return;
-                }
-
-                // Check file type
-                const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
-                if (!allowedTypes.includes(file.type)) {
-                    showMessage('Invalid file type. Please use PNG, JPG, JPEG, GIF, or WEBP', true);
-                    event.target.value = '';
-                    selectedAvatarFile = null;
-                    hideAvatarPreview();
-                    return;
-                }
-
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const preview = document.getElementById('avatarPreview');
-                    preview.src = e.target.result;
-                    preview.classList.add('show');
+        function handleAvatarPreview(event) {
+            previewAvatar(event, {
+                previewElementId: 'avatarPreview',
+                fileInputId: 'avatarFile',
+                onSuccess: (file) => {
                     selectedAvatarFile = file;
                     document.getElementById('removeAvatarBtn').style.display = 'block';
-                };
-                reader.readAsDataURL(file);
-            } else {
-                hideAvatarPreview();
-            }
+                },
+                onError: (message) => {
+                    showMessage(message, true);
+                    selectedAvatarFile = null;
+                    document.getElementById('removeAvatarBtn').style.display = 'none';
+                }
+            });
         }
 
         function removeAvatar() {

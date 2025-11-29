@@ -306,3 +306,65 @@ async function uploadAvatar(user_id, selectedAvatarFile) {
             console.error('Error:', error);
         }
     }
+
+/**
+ * Preview avatar image with file validation
+ * @param {Event} event - File input change event
+ * @param {Object} config - Configuration object
+ * @param {string} config.previewElementId - ID of preview image element
+ * @param {string} config.fileInputId - ID of file input element
+ * @param {Function} config.onSuccess - Callback(file) when file is valid
+ * @param {Function} config.onError - Callback(message) when file is invalid
+ * @param {Function} [config.onUploadBtnChange] - Optional callback(disabled) to update upload button
+ */
+function previewAvatar(event, config) {
+    const file = event.target.files[0];
+    const {
+        previewElementId,
+        fileInputId,
+        onSuccess,
+        onError,
+        onUploadBtnChange
+    } = config;
+
+    if (file) {
+        // Check file size (5MB limit)
+        if (file.size > 5 * 1024 * 1024) {
+            onError('File too large. Maximum size is 5MB');
+            event.target.value = '';
+            const preview = document.getElementById(previewElementId);
+            if (preview) {
+                preview.classList.remove('show');
+                preview.src = '';
+            }
+            if (onUploadBtnChange) onUploadBtnChange(true);
+            return;
+        }
+
+        // Check file type
+        const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            onError('Invalid file type. Please use PNG, JPG, JPEG, GIF, or WEBP');
+            event.target.value = '';
+            const preview = document.getElementById(previewElementId);
+            if (preview) {
+                preview.classList.remove('show');
+                preview.src = '';
+            }
+            if (onUploadBtnChange) onUploadBtnChange(true);
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const preview = document.getElementById(previewElementId);
+            if (preview) {
+                preview.src = e.target.result;
+                preview.classList.add('show');
+            }
+            if (onUploadBtnChange) onUploadBtnChange(false);
+            onSuccess(file);
+        };
+        reader.readAsDataURL(file);
+    }
+}
