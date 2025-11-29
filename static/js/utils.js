@@ -193,3 +193,33 @@ async function syncServerTime() {
         return null;
     }
 }
+
+/**
+ * Load app footer details (version + GitHub link) and apply role-based visibility.
+ * Updates elements with ids `appVersion` and `appGithub`.
+ */
+async function loadAppFooter() {
+    try {
+        const response = await fetch('/api/version');
+        const data = await response.json();
+
+        const versionEl = document.getElementById('appVersion');
+        const githubEl = document.getElementById('appGithub');
+
+        if (versionEl) {
+            versionEl.textContent = `v${data.version}`;
+        }
+
+        if (githubEl) {
+            githubEl.href = data.github_url;
+            // Show GitHub icon only for parents (use local role)
+            if (getRole() === 'parent') {
+                githubEl.classList.add('visible');
+            } else {
+                githubEl.classList.remove('visible');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading app footer:', error);
+    }
+}

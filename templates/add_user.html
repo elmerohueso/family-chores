@@ -223,31 +223,7 @@
         });
 
         // Load app version and GitHub link
-        async function loadAppFooter() {
-            try {
-                const response = await fetch('/api/version');
-                const data = await response.json();
-                
-                const versionEl = document.getElementById('appVersion');
-                const githubEl = document.getElementById('appGithub');
-                
-                if (versionEl) {
-                    versionEl.textContent = `v${data.version}`;
-                }
-                
-                if (githubEl) {
-                    githubEl.href = data.github_url;
-                    // Show GitHub icon only for parents
-                    const roleResponse = await fetch('/api/get-role');
-                    const roleData = await roleResponse.json();
-                    if (roleData.role === 'parent') {
-                        githubEl.classList.add('visible');
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading app footer:', error);
-            }
-        }
+        // loadAppFooter moved to static/js/utils.js
 
         // Load footer on page load
         loadAppFooter();
