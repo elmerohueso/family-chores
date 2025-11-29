@@ -100,9 +100,27 @@ header h1 {
     box-sizing: border-box;
 }
 
-.user-icon {
-    font-size: 64px;
-    margin-bottom: 15px;
+.avatar-placeholder {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    margin: 0 auto 15px; /* center horizontally inside user-card */
+    border: 4px solid white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    position: relative;
+    background: #667eea;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><circle cx='64' cy='54' r='24' fill='%23ffffff' fill-opacity='0.9'/><path d='M28 108c6-22 26-32 36-32h0c10 0 30 10 36 32' fill='%23ffffff' fill-opacity='0.9'/></svg>");
+    background-repeat: no-repeat;
+    background-size: 80% 80%;
+    background-position: 50% 50%; /* ensure perfect centering horizontally & vertically */
+    display: block; /* no flex needed; ensures auto margins center */
+    overflow: hidden; /* crop any stray overflow to keep circle clean */
+    font-size: 0; /* hide any accidental text */
+}
+
+.avatar-placeholder:hover {
+    transform: scale(1.05);
 }
 
 /* Avatar */
@@ -111,7 +129,7 @@ header h1 {
     height: 120px;
     border-radius: 50%;
     object-fit: cover;
-    margin-bottom: 15px;
+    margin: 0 auto 15px; /* center horizontally inside user-card */
     border: 4px solid white;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     cursor: pointer;
@@ -123,8 +141,8 @@ header h1 {
 }
 
 .avatar-preview-image {
-    width: 150px;
-    height: 150px;
+    width: 120px;
+    height: 120px;
     border-radius: 50%;
     object-fit: cover;
     margin: 20px auto;

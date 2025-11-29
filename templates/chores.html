@@ -74,60 +74,7 @@
         let sortColumn = null;
         let sortDirection = 'asc';
 
-        function getRepeatBadgeClass(repeat) {
-            if (!repeat) return 'badge-none';
-            const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'daily') return 'badge-daily';
-            if (repeatLower === 'weekly') return 'badge-weekly';
-            if (repeatLower === 'monthly') return 'badge-monthly';
-            if (repeatLower === 'as_needed') return 'badge-as-needed';
-            return 'badge-none';
-        }
-
-        function formatRepeat(repeat) {
-            if (!repeat) return 'None';
-            const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'as_needed') return 'As Needed';
-            return repeat.charAt(0).toUpperCase() + repeat.slice(1);
-        }
-
-        function formatTimestamp(timestamp) {
-            if (!timestamp) return 'Never';
-            // Parse timestamp string directly without timezone conversion
-            // The timestamp is already in the server's local timezone (set via TZ)
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            
-            let year, month, day, hour, minute;
-            
-            if (typeof timestamp === 'string') {
-                // Parse ISO format string directly (e.g., "2024-01-15T12:30:00" or "2024-01-15T12:30:00-07:00")
-                const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-                if (match) {
-                    year = parseInt(match[1]);
-                    month = parseInt(match[2]) - 1; // 0-indexed
-                    day = parseInt(match[3]);
-                    hour = parseInt(match[4]);
-                    minute = parseInt(match[5]);
-                } else {
-                    // Fallback: try to parse as Date (may apply timezone conversion)
-                    const date = new Date(timestamp);
-                    year = date.getFullYear();
-                    month = date.getMonth();
-                    day = date.getDate();
-                    hour = date.getHours();
-                    minute = date.getMinutes();
-                }
-            } else {
-                return 'Never';
-            }
-            
-            // Format the date/time components
-            const hour12 = hour % 12 || 12;
-            const ampm = hour < 12 ? 'AM' : 'PM';
-            const minuteStr = minute.toString().padStart(2, '0');
-            
-            return `${months[month]} ${day}, ${year} ${hour12}:${minuteStr} ${ampm}`;
-        }
+        // formatRepeat, getRepeatBadgeClass, formatTimestamp moved to static/js/utils.js
 
         let cooldownSettings = {
             daily_cooldown_hours: 12,
@@ -137,16 +84,15 @@
 
         async function loadCooldownSettings() {
             try {
-                const response = await fetch('/api/settings');
-                const settings = await response.json();
-                cooldownSettings = {
-                    daily_cooldown_hours: settings.daily_cooldown_hours || 12,
-                    weekly_cooldown_days: settings.weekly_cooldown_days || 4,
-                    monthly_cooldown_days: settings.monthly_cooldown_days || 14
-                };
+            const settings = await getSettings();
+            cooldownSettings = {
+                daily_cooldown_hours: settings.daily_cooldown_hours || 12,
+                weekly_cooldown_days: settings.weekly_cooldown_days || 4,
+                monthly_cooldown_days: settings.monthly_cooldown_days || 14
+            };
             } catch (error) {
-                console.error('Error loading cooldown settings:', error);
-                // Use defaults if settings can't be loaded
+            console.error('Error loading cooldown settings:', error);
+            // Use defaults if settings can't be loaded
             }
         }
 
@@ -170,40 +116,9 @@
             return false; // No cooldown for other repeat types
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        // escapeHtml moved to static/js/utils.js
 
-        function showMessage(text, isError = false) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = text;
-            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
-            messageDiv.style.display = 'block';
-            
-            setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 3000);
-        }
-
-        // showToast: use global `showToast` if available, otherwise create a simple toast.
-        function showToast(text, isError = false) {
-            if (typeof window.showToast === 'function' && window.showToast !== showToast) {
-                try { window.showToast(text, isError); return; } catch (e) { /* fallthrough */ }
-            }
-
-            const toast = document.createElement('div');
-            toast.className = 'toast' + (isError ? ' toast-error' : '');
-            toast.textContent = text;
-            // Position using existing .toast rules in stylesheet (top-center)
-            document.body.appendChild(toast);
-            // Remove after 3s
-            setTimeout(() => {
-                toast.classList.add('toast-hide');
-                setTimeout(() => { try { document.body.removeChild(toast); } catch (e) {} }, 400);
-            }, 3000);
-        }
+        // showToast is now provided by static/js/utils.js
 
         function updateSortIndicator(column) {
             // Clear all indicators
@@ -314,31 +229,14 @@
                     </tr>
                 `;
             }).join('');
-            updateScrollbarWidth();
+            updateScrollbarWidth('choresTable', 'tableScrollTopInner');
         }
 
-        function updateScrollbarWidth() {
-            const table = document.getElementById('choresTable');
-            const topScroll = document.getElementById('tableScrollTopInner');
-            if (table && topScroll) {
-                topScroll.style.width = table.scrollWidth + 'px';
-            }
-        }
-
-        function syncScroll(source) {
-            const top = document.getElementById('tableScrollTop');
-            const bottom = document.getElementById('tableScrollBottom');
-            if (source === 'top') {
-                bottom.scrollLeft = top.scrollLeft;
-            } else {
-                top.scrollLeft = bottom.scrollLeft;
-            }
-        }
+        // updateScrollbarWidth and syncScroll moved to static/js/utils.js
 
         async function loadChores() {
             try {
-                const response = await fetch('/api/chores');
-                allChores = await response.json();
+                allChores = await getChores();
 
                 const loadingDiv = document.getElementById('loading');
                 const choresContainer = document.getElementById('choresContainer');
@@ -366,8 +264,8 @@
         });
 
         // Sync scrollbars
-        document.getElementById('tableScrollTop').addEventListener('scroll', () => syncScroll('top'));
-        document.getElementById('tableScrollBottom').addEventListener('scroll', () => syncScroll('bottom'));
+        document.getElementById('tableScrollTop').addEventListener('scroll', () => syncScroll('top', 'tableScrollTop', 'tableScrollBottom'));
+        document.getElementById('tableScrollBottom').addEventListener('scroll', () => syncScroll('bottom', 'tableScrollTop', 'tableScrollBottom'));
 
         // Load cooldown settings and chores when page loads
         loadCooldownSettings().then(() => {
@@ -379,9 +277,7 @@
             cleanUrl();
             
             try {
-                const response = await fetch('/api/get-role');
-                const result = await response.json();
-                const role = result.role;
+                const role = getRole();
                 
                 // Kids can access chores page, so no redirect needed here
                 // But if no role is set, redirect to index
@@ -402,31 +298,7 @@
         });
 
         // Load app version and GitHub link
-        async function loadAppFooter() {
-            try {
-                const response = await fetch('/api/version');
-                const data = await response.json();
-                
-                const versionEl = document.getElementById('appVersion');
-                const githubEl = document.getElementById('appGithub');
-                
-                if (versionEl) {
-                    versionEl.textContent = `v${data.version}`;
-                }
-                
-                if (githubEl) {
-                    githubEl.href = data.github_url;
-                    // Show GitHub icon only for parents
-                    const roleResponse = await fetch('/api/get-role');
-                    const roleData = await roleResponse.json();
-                    if (roleData.role === 'parent') {
-                        githubEl.classList.add('visible');
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading app footer:', error);
-            }
-        }
+        // loadAppFooter moved to static/js/utils.js
 
         // Load footer on page load
         loadAppFooter();
@@ -582,7 +454,7 @@
 
     <!-- App Footer -->
     <div class="app-footer">
-        <span class="app-footer-version" id="appVersion">v0.9.1</span>
+        <span class="app-footer-version" id="appVersion"></span>
         <a href="#" id="appGithub" class="app-footer-github" target="_blank" rel="noopener noreferrer" title="View on GitHub">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>

@@ -75,10 +75,10 @@
             <img id="avatarPreview" class="avatar-preview-image" alt="Preview">
             <div class="file-input-wrapper">
                 <label for="avatarFile" class="label-button">Choose Image</label>
-                <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="previewAvatar(event)">
+                <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="handleAvatarPreview(event)">
             </div>
             <div class="avatar-upload-actions">
-                <button class="btn btn-white-on-purple" onclick="uploadAvatar()" id="uploadBtn" disabled>Upload</button>
+                <button class="btn btn-white-on-purple" onclick="processAvatar()" id="uploadBtn" disabled>Upload</button>
                 <button class="btn btn-gray-on-cream" onclick="closeAvatarUpload()">Cancel</button>
             </div>
             <div id="avatarMessage" style="margin-top: 15px; font-size: 14px; color: #666; display: none;"></div>
@@ -89,22 +89,16 @@
         let currentUserId = null;
         let selectedAvatarFile = null;
         let userRole = null;
-        let kidPermissions = {
+        let permissions = {
             record_chore: false,
             redeem_points: false,
             withdraw_cash: false,
             view_history: false
         };
 
-        // Check for existing role selection
-        function getRole() {
-            return localStorage.getItem('userRole');
-        }
+        // getRole is now defined in static/js/utils.js
 
-        function setRole(role) {
-            localStorage.setItem('userRole', role);
-            userRole = role;
-        }
+        // setRole is now defined in static/js/utils.js
 
         function showPinInput() {
             document.getElementById('pinInputSection').classList.add('show');
@@ -136,88 +130,41 @@
             submitBtn.disabled = true;
             submitBtn.textContent = 'Validating...';
 
-            try {
-                const response = await fetch('/api/validate-pin', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ pin: pin })
-                });
+            const result = await validatePin(pin);
 
-                const result = await response.json();
-
-                if (response.ok && result.valid) {
-                    // PIN is valid, proceed with Parent login
-                    selectRole('parent');
-                } else {
-                    // Invalid PIN
-                    pinError.textContent = result.error || 'Invalid PIN. Please try again.';
-                    pinError.classList.add('show');
-                    pinInput.value = '';
-                    pinInput.focus();
-                }
-            } catch (error) {
-                pinError.textContent = 'Network error. Please try again.';
+            if (result.valid) {
+                // PIN is valid, proceed with Parent login
+                selectRole('parent');
+            } else {
+                // Invalid PIN
+                pinError.textContent = result.error || 'Invalid PIN. Please try again.';
                 pinError.classList.add('show');
-                console.error('Error:', error);
-            } finally {
+                pinInput.value = '';
+                pinInput.focus();
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Login';
             }
         }
 
         async function selectRole(role) {
-            // Set role in session on server
-            try {
-                const response = await fetch('/api/set-role', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ role: role })
-                });
-
-                if (response.ok) {
-                    setRole(role);
-                    // Reload permissions in case settings changed
-                    await loadKidPermissions();
-                        const roleOverlay = document.getElementById('roleSelectionOverlay');
-                        roleOverlay.classList.remove('show');
-                        roleOverlay.classList.add('hidden');
-                    applyRoleRestrictions();
-                    // Load users after role is set to apply restrictions
-                    loadUsers();
-                } else {
-                    console.error('Failed to set role on server');
-                }
-            } catch (error) {
-                console.error('Error setting role:', error);
+            const response = await setServerRole(role);
+            if (response && response.ok) {
+                setLocalRole(role);
+                // Reload permissions in case settings changed
+                permissions = await getPermissions();
+                const roleOverlay = document.getElementById('roleSelectionOverlay');
+                roleOverlay.classList.remove('show');
+                roleOverlay.classList.add('hidden');
+                applyRoleRestrictions();
+                // Load users after role is set to apply restrictions
+                loadUsers();
+                loadAppFooter();
+            } else {
+                console.error('Failed to set role on server');
             }
-            loadAppFooter();
         }
 
-        async function logout() {
-            // Clear the role from localStorage
-            localStorage.removeItem('userRole');
-            userRole = null;
-            
-            // Clear role from session on server
-            try {
-                await fetch('/api/set-role', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ role: '' })
-                });
-            } catch (error) {
-                console.error('Error clearing role:', error);
-            }
-            
-            // Reload the page to show role selection again
-            window.location.reload();
-        }
+        // logout is now defined in static/js/utils.js
 
         function applyRoleRestrictions() {
             const role = getRole();
@@ -230,7 +177,7 @@
                 }
                 
                 // Disable avatar uploads
-                document.querySelectorAll('.user-avatar, .user-icon').forEach(el => {
+                document.querySelectorAll('.user-avatar, .avatar-placeholder').forEach(el => {
                     el.style.pointerEvents = 'none';
                     el.style.opacity = '0.5';
                     el.style.cursor = 'default';
@@ -247,7 +194,7 @@
                     settingsLink.style.display = '';
                 }
                 
-                document.querySelectorAll('.user-avatar, .user-icon').forEach(el => {
+                document.querySelectorAll('.user-avatar, .avatar-placeholder').forEach(el => {
                     el.style.pointerEvents = '';
                     el.style.opacity = '';
                     el.style.cursor = '';
@@ -255,21 +202,7 @@
             }
         }
 
-        async function loadKidPermissions() {
-            try {
-                const response = await fetch('/api/settings');
-                const settings = await response.json();
-                kidPermissions = {
-                    record_chore: settings.kid_allowed_record_chore || false,
-                    redeem_points: settings.kid_allowed_redeem_points || false,
-                    withdraw_cash: settings.kid_allowed_withdraw_cash || false,
-                    view_history: settings.kid_allowed_view_history || false
-                };
-            } catch (error) {
-                console.error('Error loading kid permissions:', error);
-                // Keep defaults if error occurs
-            }
-        }
+        // getPermissions is now defined in static/js/utils.js
 
         // Show role selection on page load if not already selected
         window.addEventListener('DOMContentLoaded', async () => {
@@ -277,7 +210,7 @@
             cleanUrl();
             
             // Load kid permissions first
-            await loadKidPermissions();
+            permissions = await getPermissions();
             
             const role = getRole();
             if (!role) {
@@ -303,8 +236,7 @@
         });
         async function loadUsers() {
             try {
-                const response = await fetch('/api/users');
-                const users = await response.json();
+                const users = await getUsers();
 
                 const loadingDiv = document.getElementById('loading');
                 const usersContainer = document.getElementById('usersContainer');
@@ -334,11 +266,11 @@
                             ${getRole() !== 'kid' 
                                 ? (avatarUrl 
                                     ? `<img src="${avatarUrl}" alt="${escapeHtml(user.full_name)}" class="user-avatar" onclick="event.stopPropagation(); openAvatarUpload(${user.user_id})" title="Click to change avatar" style="position: relative; z-index: 2;">`
-                                    : `<div class="user-icon" onclick="event.stopPropagation(); openAvatarUpload(${user.user_id})" style="cursor: pointer; position: relative; z-index: 2;" title="Click to add avatar">👤</div>`
+                                    : `<div class="avatar-placeholder" onclick="event.stopPropagation(); openAvatarUpload(${user.user_id})" style="cursor: pointer; position: relative; z-index: 2;" title="Click to add avatar"></div>`
                                 )
                                 : (avatarUrl 
                                     ? `<img src="${avatarUrl}" alt="${escapeHtml(user.full_name)}" class="user-avatar" style="position: relative; z-index: 2;">`
-                                    : `<div class="user-icon" style="position: relative; z-index: 2;">👤</div>`
+                                    : `<div class="avatar-placeholder" style="position: relative; z-index: 2;"></div>`
                                 )
                             }
                             <div class="user-name" style="position: relative; z-index: 2;">${escapeHtml(user.full_name)}</div>
@@ -352,11 +284,11 @@
                                     <a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>
                                     <a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>
                                 ` : `
-                                    ${kidPermissions.record_chore ? `<a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>` : ''}
-                                    ${kidPermissions.redeem_points ? `<a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>` : ''}
-                                    ${kidPermissions.withdraw_cash ? `<a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>` : ''}
+                                    ${permissions.record_chore ? `<a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>` : ''}
+                                    ${permissions.redeem_points ? `<a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>` : ''}
+                                    ${permissions.withdraw_cash ? `<a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>` : ''}
                                 `}
-                                ${(getRole() !== 'kid' || kidPermissions.view_history) ? `<a href="/history?user_id=${user.user_id}" class="btn btn-blue-on-aero btn-sm" onclick="event.stopPropagation();" style="display: block;">View History</a>` : ''}
+                                ${(getRole() !== 'kid' || permissions.view_history) ? `<a href="/history?user_id=${user.user_id}" class="btn btn-blue-on-aero btn-sm" onclick="event.stopPropagation();" style="display: block;">View History</a>` : ''}
                             </div>
                         </div>
                     `;
@@ -368,11 +300,7 @@
             }
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        // escapeHtml moved to static/js/utils.js
 
         function openAvatarUpload(userId) {
             currentUserId = userId;
@@ -390,26 +318,21 @@
             selectedAvatarFile = null;
         }
 
-        function previewAvatar(event) {
-            const file = event.target.files[0];
-            if (file) {
-                if (file.size > 5 * 1024 * 1024) {
-                    showAvatarMessage('File too large. Maximum size is 5MB', true);
-                    event.target.value = '';
-                    return;
-                }
-                
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const preview = document.getElementById('avatarPreview');
-                    preview.src = e.target.result;
-                    preview.classList.add('show');
+        function handleAvatarPreview(event) {
+            previewAvatar(event, {
+                previewElementId: 'avatarPreview',
+                fileInputId: 'avatarFile',
+                onSuccess: (file) => {
                     selectedAvatarFile = file;
                     document.getElementById('uploadBtn').disabled = false;
                     document.getElementById('avatarMessage').style.display = 'none';
-                };
-                reader.readAsDataURL(file);
-            }
+                },
+                onError: (message) => {
+                    showAvatarMessage(message, true);
+                    selectedAvatarFile = null;
+                    document.getElementById('uploadBtn').disabled = true;
+                }
+            });
         }
 
         function showAvatarMessage(text, isError = false) {
@@ -419,20 +342,9 @@
             messageDiv.style.display = 'block';
         }
 
-        async function uploadAvatar() {
-            if (!selectedAvatarFile || !currentUserId) {
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('avatar', selectedAvatarFile);
-
+        async function processAvatar() {            
             try {
-                const response = await fetch(`/api/users/${currentUserId}/avatar`, {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const response = await uploadAvatar(currentUserId, selectedAvatarFile);
                 const result = await response.json();
 
                 if (response.ok) {
@@ -460,32 +372,16 @@
         let serverTimeBase = null; // Base server time components [hours, minutes, seconds] when last synced
         let serverTimeBaseMs = 0; // Browser time (ms) when we last synced
         
-        async function syncServerTime() {
-            try {
-                const response = await fetch('/api/system-time');
-                const data = await response.json();
-                
-                // Parse the ISO timestamp string directly to get server time components
-                // Format: "2024-01-15T12:30:00-07:00" or "2024-01-15T12:30:00"
-                const timestamp = data.timestamp;
-                const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-                
-                if (match) {
-                    const hours = parseInt(match[4]);
-                    const minutes = parseInt(match[5]);
-                    const seconds = parseInt(match[6]);
-                    
-                    serverTimeBase = [hours, minutes, seconds];
-                    serverTimeBaseMs = Date.now();
-                }
-                
-                // Update display immediately
-                updateSystemTimeDisplay();
-            } catch (error) {
-                console.error('Error syncing server time:', error);
-                // On error, fallback to browser time
-                serverTimeBase = null;
+        // syncServerTime moved to static/js/utils.js
+        async function applyServerTimeSync() {
+            const result = await syncServerTime();
+            if (result) {
+                serverTimeBase = [result.hours, result.minutes, result.seconds];
+                serverTimeBaseMs = result.nowMs;
+            } else {
+                serverTimeBase = null; // Fallback handled in display function
             }
+            updateSystemTimeDisplay();
         }
         
         function updateSystemTimeDisplay() {
@@ -530,38 +426,13 @@
         }
 
         // Sync with server on load and every 30 minutes to prevent drift
-        syncServerTime();
-        setInterval(syncServerTime, 30 * 60 * 1000); // Sync every 30 minutes
+        applyServerTimeSync();
+        setInterval(applyServerTimeSync, 30 * 60 * 1000); // Sync every 30 minutes
         
         // Update display every second
         setInterval(updateSystemTimeDisplay, 1000);
 
-        // Load app version and GitHub link
-        async function loadAppFooter() {
-            try {
-                const response = await fetch('/api/version');
-                const data = await response.json();
-                
-                const versionEl = document.getElementById('appVersion');
-                const githubEl = document.getElementById('appGithub');
-                
-                if (versionEl) {
-                    versionEl.textContent = `v${data.version}`;
-                }
-                
-                if (githubEl) {
-                    githubEl.href = data.github_url;
-                    // Show GitHub icon only for parents
-                    const roleResponse = await fetch('/api/get-role');
-                    const roleData = await roleResponse.json();
-                    if (roleData.role === 'parent') {
-                        githubEl.classList.add('visible');
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading app footer:', error);
-            }
-        }
+        // loadAppFooter moved to static/js/utils.js
 
         // Load footer on page load
         loadAppFooter();
@@ -569,7 +440,7 @@
 
     <!-- App Footer -->
     <div class="app-footer">
-        <span class="app-footer-version" id="appVersion">v0.9.1</span>
+        <span class="app-footer-version" id="appVersion"></span>
         <a href="#" id="appGithub" class="app-footer-github" target="_blank" rel="noopener noreferrer" title="View on GitHub">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>

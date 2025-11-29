@@ -39,7 +39,7 @@
                     <div class="avatar-upload-controls">
                         <div class="file-input-wrapper">
                             <label for="avatarFile" class="label-button">Choose Avatar Image</label>
-                            <input type="file" id="avatarFile" name="avatar" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="previewAvatar(event)">
+                            <input type="file" id="avatarFile" name="avatar" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="handleAvatarPreview(event)">
                         </div>
                         <button type="button" class="remove-avatar-btn" id="removeAvatarBtn" onclick="removeAvatar()" style="display: none;">Remove Avatar</button>
                         <div class="help-text">Supported formats: PNG, JPG, JPEG, GIF, WEBP. Maximum size: 5MB</div>
@@ -60,65 +60,24 @@
         const messageDiv = document.getElementById('message');
         let selectedAvatarFile = null;
 
-        function showMessage(text, isError = false) {
-            // Retained for pre-submission validation (e.g., avatar file issues)
-            messageDiv.textContent = text;
-            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
-            messageDiv.style.display = 'block';
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => { messageDiv.style.display = 'none'; }, 5000);
-        }
+        // showMessage is now provided by static/js/utils.js
 
-        function showToast(text, isError = false) {
-            const existingToast = document.querySelector('.toast');
-            if (existingToast) {
-                existingToast.remove();
-            }
-            const toast = document.createElement('div');
-            toast.className = `toast ${isError ? 'error' : 'success'}`;
-            toast.textContent = text;
-            document.body.appendChild(toast);
-            setTimeout(() => { toast.classList.add('show'); }, 10);
-            setTimeout(() => {
-                toast.classList.remove('show');
-                setTimeout(() => { toast.remove(); }, 300);
-            }, 3000);
-        }
+        // showToast is now provided by static/js/utils.js
 
-        function previewAvatar(event) {
-            const file = event.target.files[0];
-            if (file) {
-                // Check file size (5MB limit)
-                if (file.size > 5 * 1024 * 1024) {
-                    showMessage('File too large. Maximum size is 5MB', true);
-                    event.target.value = '';
-                    selectedAvatarFile = null;
-                    hideAvatarPreview();
-                    return;
-                }
-
-                // Check file type
-                const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
-                if (!allowedTypes.includes(file.type)) {
-                    showMessage('Invalid file type. Please use PNG, JPG, JPEG, GIF, or WEBP', true);
-                    event.target.value = '';
-                    selectedAvatarFile = null;
-                    hideAvatarPreview();
-                    return;
-                }
-
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const preview = document.getElementById('avatarPreview');
-                    preview.src = e.target.result;
-                    preview.classList.add('show');
+        function handleAvatarPreview(event) {
+            previewAvatar(event, {
+                previewElementId: 'avatarPreview',
+                fileInputId: 'avatarFile',
+                onSuccess: (file) => {
                     selectedAvatarFile = file;
                     document.getElementById('removeAvatarBtn').style.display = 'block';
-                };
-                reader.readAsDataURL(file);
-            } else {
-                hideAvatarPreview();
-            }
+                },
+                onError: (message) => {
+                    showMessage(message, true);
+                    selectedAvatarFile = null;
+                    document.getElementById('removeAvatarBtn').style.display = 'none';
+                }
+            });
         }
 
         function removeAvatar() {
@@ -152,14 +111,7 @@
 
             try {
                 // Create the user first
-                const response = await fetch('/api/users', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-
+                const response = await createUser(data);
                 const result = await response.json();
 
                 if (response.ok) {
@@ -168,14 +120,7 @@
                     // If avatar was selected, upload it
                     if (selectedAvatarFile) {
                         try {
-                            const avatarFormData = new FormData();
-                            avatarFormData.append('avatar', selectedAvatarFile);
-
-                            const avatarResponse = await fetch(`/api/users/${userId}/avatar`, {
-                                method: 'POST',
-                                body: avatarFormData
-                            });
-
+                            const avatarResponse = await uploadAvatar(userId, selectedAvatarFile);
                             const avatarResult = await avatarResponse.json();
 
                             if (avatarResponse.ok) {
@@ -211,9 +156,7 @@
             cleanUrl();
             
             try {
-                const response = await fetch('/api/get-role');
-                const result = await response.json();
-                const role = result.role;
+                const role = getRole();
                 
                 if (role !== 'parent') {
                     window.location.href = '/';
@@ -225,31 +168,7 @@
         });
 
         // Load app version and GitHub link
-        async function loadAppFooter() {
-            try {
-                const response = await fetch('/api/version');
-                const data = await response.json();
-                
-                const versionEl = document.getElementById('appVersion');
-                const githubEl = document.getElementById('appGithub');
-                
-                if (versionEl) {
-                    versionEl.textContent = `v${data.version}`;
-                }
-                
-                if (githubEl) {
-                    githubEl.href = data.github_url;
-                    // Show GitHub icon only for parents
-                    const roleResponse = await fetch('/api/get-role');
-                    const roleData = await roleResponse.json();
-                    if (roleData.role === 'parent') {
-                        githubEl.classList.add('visible');
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading app footer:', error);
-            }
-        }
+        // loadAppFooter moved to static/js/utils.js
 
         // Load footer on page load
         loadAppFooter();
@@ -257,7 +176,7 @@
 
     <!-- App Footer -->
     <div class="app-footer">
-        <span class="app-footer-version" id="appVersion">v0.9.1</span>
+        <span class="app-footer-version" id="appVersion"></span>
         <a href="#" id="appGithub" class="app-footer-github" target="_blank" rel="noopener noreferrer" title="View on GitHub">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
