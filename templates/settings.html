@@ -53,7 +53,7 @@
                             <span style="color: #666;">points</span>
                         </div>
                         <div style="text-align: right;">
-                            <button class="btn btn-white-on-purple btn-sm" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run One-Time Cash Out</button>
+                            <button class="btn btn-white-on-purple btn-sm" id="manualCashoutBtn" onclick="handleDailyCashOut()">Run One-Time Cash Out</button>
                             <div id="systemMessage" class="system-message"></div>
                         </div>
                     </div>
@@ -155,8 +155,8 @@
                                     <input type="text" id="parentEmailAddresses" class="form-input" style="max-width: 300px; flex: 1;" placeholder="email1@example.com, email2@example.com">
                                 </div>
                                 <div style="text-align: right; margin-bottom: 12px;">
-                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
-                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="sendDigestBtn" onclick="sendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
+                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="handleSendTestEmail()">Send Test Email</button>
+                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="sendDigestBtn" onclick="handleSendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
                                     <div id="emailTestMessage" class="system-message"></div>
                                 </div>
                                 
@@ -339,45 +339,9 @@
     </div>
 
     <script>
-        function showMessage(text, isError = false) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = text;
-            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
-            messageDiv.style.display = 'block';
-            
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            
-            setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
-        }
+        // showMessage is now provided by static/js/utils.js
 
-        function showToast(text, isError = false) {
-            // Remove any existing toast
-            const existingToast = document.querySelector('.toast');
-            if (existingToast) {
-                existingToast.remove();
-            }
-
-            // Create new toast
-            const toast = document.createElement('div');
-            toast.className = `toast ${isError ? 'error' : 'success'}`;
-            toast.textContent = text;
-            document.body.appendChild(toast);
-
-            // Trigger animation
-            setTimeout(() => {
-                toast.classList.add('show');
-            }, 10);
-
-            // Remove toast after 3 seconds
-            setTimeout(() => {
-                toast.classList.remove('show');
-                setTimeout(() => {
-                    toast.remove();
-                }, 300);
-            }, 3000);
-        }
+        // showToast is now provided by static/js/utils.js
 
         function resetForm() {
             loadSettings();
@@ -385,8 +349,7 @@
 
         async function loadSettings() {
             try {
-                const response = await fetch('/api/settings');
-                const settings = await response.json();
+                const settings = await getSettings();
 
                 document.getElementById('automaticDailyCashOut').checked = settings.automatic_daily_cash_out;
                 // Set cash out time (format: HH:MM, convert to time input format)
@@ -471,14 +434,7 @@
             }
 
             try {
-                const response = await fetch('/api/settings', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-
+                const response = await updateSettings(data);
                 const result = await response.json();
 
                 if (response.ok) {
@@ -545,10 +501,7 @@
                 closeConfirmation();
 
                 try {
-                    const response = await fetch(`/api/users/${userId}`, {
-                        method: 'DELETE'
-                    });
-
+                    const response = await deleteUser(userId);
                     const result = await response.json();
 
                     if (response.ok) {
@@ -571,10 +524,7 @@
                 closeConfirmation();
 
                 try {
-                    const response = await fetch(`/api/chores/${choreId}`, {
-                        method: 'DELETE'
-                    });
-
+                    const response = await deleteChore(choreId);
                     const result = await response.json();
 
                     if (response.ok) {
@@ -597,26 +547,20 @@
                 return;
             }
 
-            let endpoint;
-            let resetType = pendingResetType;
-            
-            if (pendingResetType === 'points') {
-                endpoint = '/api/reset-points';
-            } else if (pendingResetType === 'cash') {
-                endpoint = '/api/reset-cash';
-            } else if (pendingResetType === 'transactions') {
-                endpoint = '/api/reset-transactions';
-            } else {
-                closeConfirmation();
-                return;
-            }
-            
+            const resetType = pendingResetType;
             closeConfirmation();
 
             try {
-                const response = await fetch(endpoint, {
-                    method: 'POST'
-                });
+                let response;
+                if (resetType === 'points') {
+                    response = await resetPoints();
+                } else if (resetType === 'cash') {
+                    response = await resetCash();
+                } else if (resetType === 'transactions') {
+                    response = await resetTransactions();
+                } else {
+                    return;
+                }
 
                 const result = await response.json();
 
@@ -655,28 +599,9 @@
         let choresSortDirection = 'asc';
         let editingChoreId = null;
 
-        function getRepeatBadgeClass(repeat) {
-            if (!repeat) return 'badge-none';
-            const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'daily') return 'badge-daily';
-            if (repeatLower === 'weekly') return 'badge-weekly';
-            if (repeatLower === 'monthly') return 'badge-monthly';
-            if (repeatLower === 'as_needed') return 'badge-as-needed';
-            return 'badge-none';
-        }
+        // getRepeatBadgeClass and formatRepeat moved to static/js/utils.js
 
-        function formatRepeat(repeat) {
-            if (!repeat) return 'None';
-            const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'as_needed') return 'As Needed';
-            return repeat.charAt(0).toUpperCase() + repeat.slice(1);
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        // escapeHtml moved to static/js/utils.js
 
         function updateChoresSortIndicator(column) {
             // Clear all indicators
@@ -982,17 +907,11 @@
             const scrollPosition = window.scrollY;
 
             try {
-                const response = await fetch(`/api/chores/${choreId}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        chore: chore,
-                        point_value: pointValue,
-                        repeat: repeat,
-                        requires_approval: requiresApproval
-                    })
+                const response = await updateChore(choreId, {
+                    chore: chore,
+                    point_value: pointValue,
+                    repeat: repeat,
+                    requires_approval: requiresApproval
                 });
 
                 const result = await response.json();
@@ -1021,8 +940,7 @@
                 choresLoading.style.display = 'block';
                 choresContainer.style.display = 'none';
 
-                const response = await fetch('/api/chores');
-                allChores = await response.json();
+                allChores = await getChores();
 
                 choresLoading.style.display = 'none';
                 choresContainer.style.display = 'block';
@@ -1218,8 +1136,7 @@
                 usersLoading.style.display = 'block';
                 usersContainer.style.display = 'none';
 
-                const response = await fetch('/api/users');
-                allUsers = await response.json();
+                allUsers = await getUsers();
 
                 usersLoading.style.display = 'none';
                 usersContainer.style.display = 'block';
@@ -1299,16 +1216,13 @@
         // Load settings when page loads
         loadSettings();
 
-        async function triggerDailyCashOut() {
+        async function handleDailyCashOut() {
             const btn = document.getElementById('manualCashoutBtn');
             btn.disabled = true;
             btn.textContent = 'Processing...';
 
             try {
-                const response = await fetch('/api/daily-cash-out', {
-                    method: 'POST'
-                });
-
+                const response = await triggerDailyCashOut();
                 const result = await response.json();
 
                 if (response.ok) {
@@ -1331,9 +1245,7 @@
             cleanUrl();
             
             try {
-                const response = await fetch('/api/get-role');
-                const result = await response.json();
-                const role = result.role;
+                const role = getRole();
                 
                 if (role !== 'parent') {
                     window.location.href = '/';
@@ -1345,37 +1257,13 @@
         });
 
         // Load app version and GitHub link
-        async function loadAppFooter() {
-            try {
-                const response = await fetch('/api/version');
-                const data = await response.json();
-                
-                const versionEl = document.getElementById('appVersion');
-                const githubEl = document.getElementById('appGithub');
-                
-                if (versionEl) {
-                    versionEl.textContent = `v${data.version}`;
-                }
-                
-                if (githubEl) {
-                    githubEl.href = data.github_url;
-                    // Show GitHub icon only for parents
-                    const roleResponse = await fetch('/api/get-role');
-                    const roleData = await roleResponse.json();
-                    if (roleData.role === 'parent') {
-                        githubEl.classList.add('visible');
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading app footer:', error);
-            }
-        }
+        // loadAppFooter moved to static/js/utils.js
 
         // Load footer on page load
         loadAppFooter();
 
         // Send test email
-        async function sendTestEmail() {
+        async function handleSendTestEmail() {
             const btn = document.getElementById('testEmailBtn');
             const parentEmails = document.getElementById('parentEmailAddresses').value.trim();
             
@@ -1386,16 +1274,7 @@
             const emailList = parentEmails ? parentEmails.split(',').map(e => e.trim()).filter(e => e) : [];
 
             try {
-                const response = await fetch('/api/send-test-email', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        parent_email_addresses: emailList.length > 0 ? emailList : null
-                    })
-                });
-
+                const response = await sendTestEmail(emailList.length > 0 ? emailList : null);
                 const result = await response.json();
 
                 if (response.ok) {
@@ -1413,7 +1292,7 @@
         }
 
         // Send daily digest email
-        async function sendDailyDigest() {
+        async function handleSendDailyDigest() {
             const btn1 = document.getElementById('sendDigestBtn');
             const btn2 = document.getElementById('sendDigestBtn2');
             // Disable both buttons
@@ -1427,13 +1306,7 @@
             }
 
             try {
-                const response = await fetch('/api/send-daily-digest', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-
+                const response = await sendDailyDigest();
                 const result = await response.json();
 
                 if (response.ok) {
@@ -1459,7 +1332,7 @@
 
     <!-- App Footer -->
     <div class="app-footer">
-        <span class="app-footer-version" id="appVersion">v0.9.1</span>
+        <span class="app-footer-version" id="appVersion"></span>
         <a href="#" id="appGithub" class="app-footer-github" target="_blank" rel="noopener noreferrer" title="View on GitHub">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
