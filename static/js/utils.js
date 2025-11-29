@@ -370,6 +370,51 @@ async function createUser(userData) {
 }
 
 /**
+ * Create a new chore
+ * @param {Object} choreData - Chore data object
+ * @param {string} choreData.description - Chore description
+ * @param {number} choreData.points - Point value
+ * @param {string} choreData.repeat - Repeat frequency (daily/weekly/monthly/as_needed)
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function createChore(choreData) {
+    try {
+        const response = await fetch('/api/chores', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(choreData)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error creating chore:', error);
+        throw error;
+    }
+}
+
+/**
+ * Import chores from JSON data
+ * @param {Array} choresData - Array of chore objects to import
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function importChores(choresData) {
+    try {
+        const response = await fetch('/api/chores/import', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ chores: choresData })
+        });
+        return response;
+    } catch (error) {
+        console.error('Error importing chores:', error);
+        throw error;
+    }
+}
+
+/**
  * Preview avatar image with file validation
  * @param {Event} event - File input change event
  * @param {Object} config - Configuration object

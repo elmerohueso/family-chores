@@ -169,13 +169,7 @@
             };
 
             try {
-                const response = await fetch('/api/chores', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
+                const response = await createChore(data);
 
                 const result = await response.json();
 
@@ -301,13 +295,7 @@
             }
 
             try {
-                const response = await fetch('/api/chores/import', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ chores: csvData })
-                });
+                const response = await importChores(csvData);
 
                 const result = await response.json();
 
