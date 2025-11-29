@@ -168,6 +168,27 @@ async function getSettings() {
 }
 
 /**
+ * Update settings on the server
+ * @param {Object} settingsData - Settings data object
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function updateSettings(settingsData) {
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(settingsData)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error updating settings:', error);
+        throw error;
+    }
+}
+
+/**
  * Fetch and return all users.
  * @returns {Promise<Array>} Array of user objects from /api/users
  */
@@ -186,6 +207,88 @@ async function getUsers() {
 }
 
 /**
+ * Delete a user by ID
+ * @param {number} userId - The user ID to delete
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function deleteUser(userId) {
+    try {
+        const response = await fetch(`/api/users/${userId}`, {
+            method: 'DELETE'
+        });
+        return response;
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        throw error;
+    }
+}
+
+/**
+ * Delete a chore by ID
+ * @param {number} choreId - The chore ID to delete
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function deleteChore(choreId) {
+    try {
+        const response = await fetch(`/api/chores/${choreId}`, {
+            method: 'DELETE'
+        });
+        return response;
+    } catch (error) {
+        console.error('Error deleting chore:', error);
+        throw error;
+    }
+}
+
+/**
+ * Reset all user point balances to 0
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function resetPoints() {
+    try {
+        const response = await fetch('/api/reset-points', {
+            method: 'POST'
+        });
+        return response;
+    } catch (error) {
+        console.error('Error resetting points:', error);
+        throw error;
+    }
+}
+
+/**
+ * Reset all user cash balances to $0.00
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function resetCash() {
+    try {
+        const response = await fetch('/api/reset-cash', {
+            method: 'POST'
+        });
+        return response;
+    } catch (error) {
+        console.error('Error resetting cash:', error);
+        throw error;
+    }
+}
+
+/**
+ * Reset all transaction history
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function resetTransactions() {
+    try {
+        const response = await fetch('/api/reset-transactions', {
+            method: 'POST'
+        });
+        return response;
+    } catch (error) {
+        console.error('Error resetting transactions:', error);
+        throw error;
+    }
+}
+
+/**
  * Fetch and return all chores.
  * @returns {Promise<Array>} Array of chore objects from /api/chores
  */
@@ -200,6 +303,132 @@ async function getChores() {
     } catch (error) {
         console.error('Error fetching chores:', error);
         return [];
+    }
+}
+
+/**
+ * Fetch and return all transactions.
+ * @returns {Promise<Array>} Array of transaction objects from /api/transactions
+ */
+async function getTransactions() {
+    try {
+        const response = await fetch('/api/transactions');
+        if (!response.ok) {
+            throw new Error(`Failed to load transactions: ${response.status}`);
+        }
+        const transactions = await response.json();
+        return transactions;
+    } catch (error) {
+        console.error('Error fetching transactions:', error);
+        return [];
+    }
+}
+
+/**
+ * Create a new transaction (chore completion or point redemption)
+ * @param {Object} transactionData - Transaction data object
+ * @param {number} transactionData.user_id - User ID
+ * @param {number|null} transactionData.chore_id - Chore ID (null for redemptions)
+ * @param {number} transactionData.value - Point value (negative for redemptions)
+ * @param {string} [transactionData.redemption_type] - Type of redemption (optional)
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function createTransaction(transactionData) {
+    try {
+        const response = await fetch('/api/transactions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(transactionData)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error creating transaction:', error);
+        throw error;
+    }
+}
+
+/**
+ * Withdraw cash from user's cash balance
+ * @param {number} userId - User ID
+ * @param {number} amount - Amount to withdraw
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function withdrawCash(userId, amount) {
+    try {
+        const response = await fetch('/api/withdraw-cash', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                amount: amount
+            })
+        });
+        return response;
+    } catch (error) {
+        console.error('Error withdrawing cash:', error);
+        throw error;
+    }
+}
+
+/**
+ * Trigger manual daily cash-out operation
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function triggerDailyCashOut() {
+    try {
+        const response = await fetch('/api/daily-cash-out', {
+            method: 'POST'
+        });
+        return response;
+    } catch (error) {
+        console.error('Error triggering daily cash out:', error);
+        throw error;
+    }
+}
+
+/**
+ * Send test email to configured parent addresses
+ * @param {Array<string>|null} emailAddresses - Email addresses to send test to, or null for all configured
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function sendTestEmail(emailAddresses = null) {
+    try {
+        const response = await fetch('/api/send-test-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                parent_email_addresses: emailAddresses
+            })
+        });
+        return response;
+    } catch (error) {
+        console.error('Error sending test email:', error);
+        throw error;
+    }
+}
+
+/**
+ * Send daily digest email
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function sendDailyDigest() {
+    try {
+        const response = await fetch('/api/send-daily-digest', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        return response;
+    } catch (error) {
+        console.error('Error sending daily digest:', error);
+        throw error;
     }
 }
 
@@ -407,6 +636,32 @@ async function createChore(choreData) {
         return response;
     } catch (error) {
         console.error('Error creating chore:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update an existing chore
+ * @param {number} choreId - The chore ID to update
+ * @param {Object} choreData - Chore data object
+ * @param {string} choreData.chore - Chore name/description
+ * @param {number} choreData.point_value - Point value
+ * @param {string} choreData.repeat - Repeat frequency (daily/weekly/monthly/as_needed)
+ * @param {boolean} choreData.requires_approval - Whether chore requires approval
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function updateChore(choreId, choreData) {
+    try {
+        const response = await fetch(`/api/chores/${choreId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(choreData)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error updating chore:', error);
         throw error;
     }
 }

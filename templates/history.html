@@ -367,8 +367,7 @@
                     cleanUrl();
                 }
 
-                const response = await fetch('/api/transactions');
-                allTransactions = await response.json();
+                allTransactions = await getTransactions();
 
                 // If filtering by user, get the user's name
                 if (filterUserId) {
@@ -411,9 +410,7 @@
         // Check role and permissions on page load
         window.addEventListener('DOMContentLoaded', async () => {
             try {
-                const response = await fetch('/api/get-role');
-                const result = await response.json();
-                const role = result.role;
+                const role = getRole();
                 
                 // Parents always have access
                 if (role === 'parent') {

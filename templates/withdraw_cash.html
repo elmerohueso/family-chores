@@ -222,17 +222,7 @@
             }
 
             try {
-                const response = await fetch('/api/withdraw-cash', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        user_id: userId,
-                        amount: amount
-                    })
-                });
-
+                const response = await withdrawCash(userId, amount);
                 const result = await response.json();
 
                 if (response.ok) {

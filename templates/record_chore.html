@@ -149,16 +149,15 @@
 
         async function loadCooldownSettings() {
             try {
-                const response = await fetch('/api/settings');
-                const settings = await response.json();
-                cooldownSettings = {
-                    daily_cooldown_hours: settings.daily_cooldown_hours || 12,
-                    weekly_cooldown_days: settings.weekly_cooldown_days || 4,
-                    monthly_cooldown_days: settings.monthly_cooldown_days || 14
-                };
+            const settings = await getSettings();
+            cooldownSettings = {
+                daily_cooldown_hours: settings.daily_cooldown_hours || 12,
+                weekly_cooldown_days: settings.weekly_cooldown_days || 4,
+                monthly_cooldown_days: settings.monthly_cooldown_days || 14
+            };
             } catch (error) {
-                console.error('Error loading cooldown settings:', error);
-                // Use defaults if settings can't be loaded
+            console.error('Error loading cooldown settings:', error);
+            // Use defaults if settings can't be loaded
             }
         }
 
@@ -401,14 +400,7 @@
             }
 
             try {
-                const response = await fetch('/api/transactions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-
+                const response = await createTransaction(data);
                 const result = await response.json();
 
                 if (response.ok) {

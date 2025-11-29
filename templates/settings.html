@@ -53,7 +53,7 @@
                             <span style="color: #666;">points</span>
                         </div>
                         <div style="text-align: right;">
-                            <button class="btn btn-white-on-purple btn-sm" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run One-Time Cash Out</button>
+                            <button class="btn btn-white-on-purple btn-sm" id="manualCashoutBtn" onclick="handleDailyCashOut()">Run One-Time Cash Out</button>
                             <div id="systemMessage" class="system-message"></div>
                         </div>
                     </div>
@@ -155,8 +155,8 @@
                                     <input type="text" id="parentEmailAddresses" class="form-input" style="max-width: 300px; flex: 1;" placeholder="email1@example.com, email2@example.com">
                                 </div>
                                 <div style="text-align: right; margin-bottom: 12px;">
-                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
-                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="sendDigestBtn" onclick="sendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
+                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="handleSendTestEmail()">Send Test Email</button>
+                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="sendDigestBtn" onclick="handleSendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
                                     <div id="emailTestMessage" class="system-message"></div>
                                 </div>
                                 
@@ -349,8 +349,7 @@
 
         async function loadSettings() {
             try {
-                const response = await fetch('/api/settings');
-                const settings = await response.json();
+                const settings = await getSettings();
 
                 document.getElementById('automaticDailyCashOut').checked = settings.automatic_daily_cash_out;
                 // Set cash out time (format: HH:MM, convert to time input format)
@@ -435,14 +434,7 @@
             }
 
             try {
-                const response = await fetch('/api/settings', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-
+                const response = await updateSettings(data);
                 const result = await response.json();
 
                 if (response.ok) {
@@ -509,10 +501,7 @@
                 closeConfirmation();
 
                 try {
-                    const response = await fetch(`/api/users/${userId}`, {
-                        method: 'DELETE'
-                    });
-
+                    const response = await deleteUser(userId);
                     const result = await response.json();
 
                     if (response.ok) {
@@ -535,10 +524,7 @@
                 closeConfirmation();
 
                 try {
-                    const response = await fetch(`/api/chores/${choreId}`, {
-                        method: 'DELETE'
-                    });
-
+                    const response = await deleteChore(choreId);
                     const result = await response.json();
 
                     if (response.ok) {
@@ -561,26 +547,20 @@
                 return;
             }
 
-            let endpoint;
-            let resetType = pendingResetType;
-            
-            if (pendingResetType === 'points') {
-                endpoint = '/api/reset-points';
-            } else if (pendingResetType === 'cash') {
-                endpoint = '/api/reset-cash';
-            } else if (pendingResetType === 'transactions') {
-                endpoint = '/api/reset-transactions';
-            } else {
-                closeConfirmation();
-                return;
-            }
-            
+            const resetType = pendingResetType;
             closeConfirmation();
 
             try {
-                const response = await fetch(endpoint, {
-                    method: 'POST'
-                });
+                let response;
+                if (resetType === 'points') {
+                    response = await resetPoints();
+                } else if (resetType === 'cash') {
+                    response = await resetCash();
+                } else if (resetType === 'transactions') {
+                    response = await resetTransactions();
+                } else {
+                    return;
+                }
 
                 const result = await response.json();
 
@@ -942,17 +922,11 @@
             const scrollPosition = window.scrollY;
 
             try {
-                const response = await fetch(`/api/chores/${choreId}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        chore: chore,
-                        point_value: pointValue,
-                        repeat: repeat,
-                        requires_approval: requiresApproval
-                    })
+                const response = await updateChore(choreId, {
+                    chore: chore,
+                    point_value: pointValue,
+                    repeat: repeat,
+                    requires_approval: requiresApproval
                 });
 
                 const result = await response.json();
@@ -1257,16 +1231,13 @@
         // Load settings when page loads
         loadSettings();
 
-        async function triggerDailyCashOut() {
+        async function handleDailyCashOut() {
             const btn = document.getElementById('manualCashoutBtn');
             btn.disabled = true;
             btn.textContent = 'Processing...';
 
             try {
-                const response = await fetch('/api/daily-cash-out', {
-                    method: 'POST'
-                });
-
+                const response = await triggerDailyCashOut();
                 const result = await response.json();
 
                 if (response.ok) {
@@ -1307,7 +1278,7 @@
         loadAppFooter();
 
         // Send test email
-        async function sendTestEmail() {
+        async function handleSendTestEmail() {
             const btn = document.getElementById('testEmailBtn');
             const parentEmails = document.getElementById('parentEmailAddresses').value.trim();
             
@@ -1318,16 +1289,7 @@
             const emailList = parentEmails ? parentEmails.split(',').map(e => e.trim()).filter(e => e) : [];
 
             try {
-                const response = await fetch('/api/send-test-email', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        parent_email_addresses: emailList.length > 0 ? emailList : null
-                    })
-                });
-
+                const response = await sendTestEmail(emailList.length > 0 ? emailList : null);
                 const result = await response.json();
 
                 if (response.ok) {
@@ -1345,7 +1307,7 @@
         }
 
         // Send daily digest email
-        async function sendDailyDigest() {
+        async function handleSendDailyDigest() {
             const btn1 = document.getElementById('sendDigestBtn');
             const btn2 = document.getElementById('sendDigestBtn2');
             // Disable both buttons
@@ -1359,13 +1321,7 @@
             }
 
             try {
-                const response = await fetch('/api/send-daily-digest', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-
+                const response = await sendDailyDigest();
                 const result = await response.json();
 
                 if (response.ok) {
