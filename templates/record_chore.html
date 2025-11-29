@@ -184,8 +184,7 @@
 
         async function loadChores() {
             try {
-                const response = await fetch('/api/chores');
-                chores = await response.json();
+                chores = await getChores();
                 renderChoreDropdown();
             } catch (error) {
                 console.error('Error loading chores:', error);

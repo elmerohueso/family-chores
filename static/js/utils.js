@@ -185,6 +185,24 @@ async function getUsers() {
     }
 }
 
+/**
+ * Fetch and return all chores.
+ * @returns {Promise<Array>} Array of chore objects from /api/chores
+ */
+async function getChores() {
+    try {
+        const response = await fetch('/api/chores');
+        if (!response.ok) {
+            throw new Error(`Failed to load chores: ${response.status}`);
+        }
+        const chores = await response.json();
+        return chores;
+    } catch (error) {
+        console.error('Error fetching chores:', error);
+        return [];
+    }
+}
+
 async function setServerRole(role) {
     // Set role in session on server
     try {

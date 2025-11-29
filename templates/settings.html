@@ -981,8 +981,7 @@
                 choresLoading.style.display = 'block';
                 choresContainer.style.display = 'none';
 
-                const response = await fetch('/api/chores');
-                allChores = await response.json();
+                allChores = await getChores();
 
                 choresLoading.style.display = 'none';
                 choresContainer.style.display = 'block';
