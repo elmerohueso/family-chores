@@ -81,8 +81,7 @@ function getUserFilterFromUrl() {
  */
 async function getPermissions() {
     try {
-        const response = await fetch('/api/settings');
-        const settings = await response.json();
+        const settings = await getSettings();
         const perms = {
             record_chore: settings.kid_allowed_record_chore || false,
             redeem_points: settings.kid_allowed_redeem_points || false,
@@ -98,6 +97,24 @@ async function getPermissions() {
             withdraw_cash: false,
             view_history: false
         };
+    }
+}
+
+/**
+ * Fetch and return all settings from the backend.
+ * @returns {Promise<Object>} Settings object as returned by /api/settings
+ */
+async function getSettings() {
+    try {
+        const response = await fetch('/api/settings');
+        if (!response.ok) {
+            throw new Error(`Failed to load settings: ${response.status}`);
+        }
+        const settings = await response.json();
+        return settings;
+    } catch (error) {
+        console.error('Error fetching settings:', error);
+        return {};
     }
 }
 

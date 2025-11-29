@@ -328,10 +328,8 @@
                 if (role === 'kid') {
                     userRole = 'kid';
                     try {
-                        const settingsResponse = await fetch('/api/settings');
-                        const settings = await settingsResponse.json();
-                        
-                        if (!settings.kid_allowed_withdraw_cash) {
+                        const perms = await getPermissions();
+                        if (!perms.withdraw_cash) {
                             window.location.href = '/';
                             return;
                         }

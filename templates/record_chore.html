@@ -478,10 +478,8 @@
                 if (role === 'kid') {
                     userRole = 'kid';
                     try {
-                        const settingsResponse = await fetch('/api/settings');
-                        const settings = await settingsResponse.json();
-                        
-                        if (!settings.kid_allowed_record_chore) {
+                        const perms = await getPermissions();
+                        if (!perms.record_chore) {
                             window.location.href = '/';
                             return;
                         }

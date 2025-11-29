@@ -387,10 +387,8 @@
                 if (role === 'kid') {
                     userRole = 'kid';
                     try {
-                        const settingsResponse = await fetch('/api/settings');
-                        const settings = await settingsResponse.json();
-                        
-                        if (!settings.kid_allowed_redeem_points) {
+                        const perms = await getPermissions();
+                        if (!perms.redeem_points) {
                             window.location.href = '/';
                             return;
                         }

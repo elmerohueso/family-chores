@@ -433,10 +433,8 @@
                 // Kids need permission check
                 if (role === 'kid') {
                     try {
-                        const settingsResponse = await fetch('/api/settings');
-                        const settings = await settingsResponse.json();
-                        
-                        if (!settings.kid_allowed_view_history) {
+                        const perms = await getPermissions();
+                        if (!perms.view_history) {
                             window.location.href = '/';
                             return;
                         }

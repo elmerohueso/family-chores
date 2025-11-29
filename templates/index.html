@@ -175,7 +175,7 @@
                 if (response.ok) {
                     setRole(role);
                     // Reload permissions in case settings changed
-                    await getPermissions();
+                    permissions = await getPermissions();
                         const roleOverlay = document.getElementById('roleSelectionOverlay');
                         roleOverlay.classList.remove('show');
                         roleOverlay.classList.add('hidden');
@@ -237,7 +237,7 @@
             cleanUrl();
             
             // Load kid permissions first
-            kidPermissions = await getPermissions();
+            permissions = await getPermissions();
             
             const role = getRole();
             if (!role) {
