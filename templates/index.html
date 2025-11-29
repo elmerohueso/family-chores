@@ -177,7 +177,7 @@
                 }
                 
                 // Disable avatar uploads
-                document.querySelectorAll('.user-avatar, .user-icon').forEach(el => {
+                document.querySelectorAll('.user-avatar, .avatar-placeholder').forEach(el => {
                     el.style.pointerEvents = 'none';
                     el.style.opacity = '0.5';
                     el.style.cursor = 'default';
@@ -194,7 +194,7 @@
                     settingsLink.style.display = '';
                 }
                 
-                document.querySelectorAll('.user-avatar, .user-icon').forEach(el => {
+                document.querySelectorAll('.user-avatar, .avatar-placeholder').forEach(el => {
                     el.style.pointerEvents = '';
                     el.style.opacity = '';
                     el.style.cursor = '';
@@ -266,11 +266,11 @@
                             ${getRole() !== 'kid' 
                                 ? (avatarUrl 
                                     ? `<img src="${avatarUrl}" alt="${escapeHtml(user.full_name)}" class="user-avatar" onclick="event.stopPropagation(); openAvatarUpload(${user.user_id})" title="Click to change avatar" style="position: relative; z-index: 2;">`
-                                    : `<div class="user-icon" onclick="event.stopPropagation(); openAvatarUpload(${user.user_id})" style="cursor: pointer; position: relative; z-index: 2;" title="Click to add avatar">👤</div>`
+                                    : `<div class="avatar-placeholder" onclick="event.stopPropagation(); openAvatarUpload(${user.user_id})" style="cursor: pointer; position: relative; z-index: 2;" title="Click to add avatar"></div>`
                                 )
                                 : (avatarUrl 
                                     ? `<img src="${avatarUrl}" alt="${escapeHtml(user.full_name)}" class="user-avatar" style="position: relative; z-index: 2;">`
-                                    : `<div class="user-icon" style="position: relative; z-index: 2;">👤</div>`
+                                    : `<div class="avatar-placeholder" style="position: relative; z-index: 2;"></div>`
                                 )
                             }
                             <div class="user-name" style="position: relative; z-index: 2;">${escapeHtml(user.full_name)}</div>
