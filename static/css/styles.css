@@ -141,8 +141,8 @@ header h1 {
 }
 
 .avatar-preview-image {
-    width: 150px;
-    height: 150px;
+    width: 120px;
+    height: 120px;
     border-radius: 50%;
     object-fit: cover;
     margin: 20px auto;
