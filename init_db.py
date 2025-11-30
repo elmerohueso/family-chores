@@ -215,8 +215,8 @@ def init_database():
                 -- Seed default roles
                 INSERT INTO roles (role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history, is_parent)
                 VALUES
-                    ('Parent', TRUE, TRUE, TRUE, TRUE, TRUE),
-                    ('Kid', FALSE, FALSE, FALSE, FALSE, FALSE);
+                    ('parent', TRUE, TRUE, TRUE, TRUE, TRUE),
+                    ('kid', FALSE, FALSE, FALSE, FALSE, FALSE);
             END IF;
         END
         $$;
