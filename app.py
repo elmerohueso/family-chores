@@ -761,7 +761,7 @@ def get_users():
             u.balance,
             u.avatar_path,
             COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM "user" u
+        FROM family_members u
         LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
         ORDER BY u.user_id
     ''')
@@ -793,7 +793,7 @@ def upload_avatar(user_id):
     # Verify user exists
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT user_id FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT user_id FROM family_members WHERE user_id = %s', (user_id,))
     user = cursor.fetchone()
     if not user:
         cursor.close()
@@ -809,7 +809,7 @@ def upload_avatar(user_id):
     file.save(filepath)
     
     # Delete old avatar if exists
-    cursor.execute('SELECT avatar_path FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT avatar_path FROM family_members WHERE user_id = %s', (user_id,))
     old_avatar = cursor.fetchone()
     if old_avatar and old_avatar.get('avatar_path'):
         old_path = os.path.join(AVATAR_DIR, os.path.basename(old_avatar['avatar_path']))
@@ -820,13 +820,13 @@ def upload_avatar(user_id):
                 pass  # Ignore errors deleting old file
     
     # Get user name for logging
-    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (user_id,))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else f'User {user_id}'
     
     # Update database
     relative_path = os.path.join('avatars', filename)
-    cursor.execute('UPDATE "user" SET avatar_path = %s WHERE user_id = %s', (relative_path, user_id))
+    cursor.execute('UPDATE family_members SET avatar_path = %s WHERE user_id = %s', (relative_path, user_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -870,7 +870,7 @@ def create_user():
     
     try:
         cursor.execute(
-            'INSERT INTO "user" (full_name, balance) VALUES (%s, %s) RETURNING user_id',
+            'INSERT INTO family_members (full_name, balance) VALUES (%s, %s) RETURNING user_id',
             (data['full_name'], data.get('balance', 0))
         )
         user_id = cursor.fetchone()[0]
@@ -909,7 +909,7 @@ def delete_user(user_id):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     # Check if user exists and get user name for logging
-    cursor.execute('SELECT full_name, avatar_path FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT full_name, avatar_path FROM family_members WHERE user_id = %s', (user_id,))
     user = cursor.fetchone()
     if not user:
         cursor.close()
@@ -948,7 +948,7 @@ def delete_user(user_id):
     cursor.execute('DELETE FROM cash_balances WHERE user_id = %s', (user_id,))
     
     # Delete user
-    cursor.execute('DELETE FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('DELETE FROM family_members WHERE user_id = %s', (user_id,))
     
     conn.commit()
     cursor.close()
@@ -980,7 +980,7 @@ def get_transactions():
             t.timestamp,
             u.full_name as user_name
         FROM transactions t
-        LEFT JOIN "user" u ON t.user_id = u.user_id
+        LEFT JOIN family_members u ON t.user_id = u.user_id
         ORDER BY t.timestamp DESC
     ''')
     transactions = cursor.fetchall()
@@ -1045,7 +1045,7 @@ def send_notification_email(notification_type, user_name, description, value=Non
     point_balance = None
     cash_balance = None
     if user_id:
-        cursor.execute('SELECT balance FROM "user" WHERE user_id = %s', (user_id,))
+        cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (user_id,))
         user_result = cursor.fetchone()
         if user_result:
             point_balance = user_result.get('balance') or 0
@@ -1189,7 +1189,7 @@ def create_transaction():
     
     # Check user balance for redemptions (negative values)
     if value < 0:
-        cursor.execute('SELECT balance FROM "user" WHERE user_id = %s', (data['user_id'],))
+        cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (data['user_id'],))
         user = cursor.fetchone()
         if not user:
             cursor.close()
@@ -1270,7 +1270,7 @@ def create_transaction():
     
     # Update user balance
     cursor.execute(
-        'UPDATE "user" SET balance = balance + %s WHERE user_id = %s',
+        'UPDATE family_members SET balance = balance + %s WHERE user_id = %s',
         (value, data['user_id'])
     )
     
@@ -1294,7 +1294,7 @@ def create_transaction():
         ''', (cash_amount, data['user_id']))
     
     # Get user name for email notification
-    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (data['user_id'],))
+    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else 'Unknown User'
     
@@ -1723,7 +1723,7 @@ def reset_points():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE "user" SET balance = 0')
+        cursor.execute('UPDATE family_members SET balance = 0')
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2047,7 +2047,7 @@ def withdraw_cash():
     # Check user exists and get cash balance
     cursor.execute('''
         SELECT u.user_id, COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM "user" u
+        FROM family_members u
         LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
         WHERE u.user_id = %s
     ''', (data['user_id'],))
@@ -2090,7 +2090,7 @@ def withdraw_cash():
     transaction_id = result['transaction_id'] if result else None
     
     # Get user name for email notification
-    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (data['user_id'],))
+    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else 'Unknown User'
     
@@ -2147,7 +2147,7 @@ def process_daily_cash_out(triggered_manually=False):
     max_rollover = get_setting('max_rollover_points', 4)
     
     # Get all users
-    cursor.execute('SELECT user_id, balance FROM "user"')
+    cursor.execute('SELECT user_id, balance FROM family_members')
     users = cursor.fetchall()
     
     for user in users:
@@ -2178,7 +2178,7 @@ def process_daily_cash_out(triggered_manually=False):
                 
                 # Update point balance to max_rollover
                 cursor.execute('''
-                    UPDATE "user" 
+                    UPDATE family_members 
                     SET balance = %s 
                     WHERE user_id = %s
                 ''', (rollover, user_id))
@@ -2194,7 +2194,7 @@ def process_daily_cash_out(triggered_manually=False):
             # Just cap the balance at max_rollover if it exceeds it
             if balance > max_rollover:
                 cursor.execute('''
-                    UPDATE "user" 
+                    UPDATE family_members 
                     SET balance = %s 
                     WHERE user_id = %s
                 ''', (max_rollover, user_id))
@@ -2303,7 +2303,7 @@ def send_daily_digest_email(force=False):
                 t.timestamp,
                 u.full_name as user_name
             FROM transactions t
-            LEFT JOIN "user" u ON t.user_id = u.user_id
+            LEFT JOIN family_members u ON t.user_id = u.user_id
             WHERE t.timestamp >= %s AND t.timestamp <= %s
             ORDER BY t.timestamp DESC
         ''', (yesterday_start, yesterday_end))
@@ -2316,7 +2316,7 @@ def send_daily_digest_email(force=False):
                 u.full_name,
                 u.balance as point_balance,
                 COALESCE(cb.cash_balance, 0.0) as cash_balance
-            FROM "user" u
+            FROM family_members u
             LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
             ORDER BY u.user_id
         ''')

@@ -31,9 +31,23 @@ def init_database():
         )
     ''')
     
-    # Create user table
+    # If an old "user" table exists, rename it to family_members for clarity
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS "user" (
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables WHERE table_name = 'user'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM information_schema.tables WHERE table_name = 'family_members'
+            ) THEN
+                ALTER TABLE "user" RENAME TO family_members;
+            END IF;
+        END $$;
+    ''')
+
+    # Create family_members table (new name for users)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS family_members (
             user_id SERIAL PRIMARY KEY,
             full_name VARCHAR(255) NOT NULL,
             balance INTEGER DEFAULT 0,
@@ -47,9 +61,9 @@ def init_database():
         BEGIN
             IF NOT EXISTS (
                 SELECT 1 FROM information_schema.columns 
-                WHERE table_name = 'user' AND column_name = 'avatar_path'
+                WHERE table_name = 'family_members' AND column_name = 'avatar_path'
             ) THEN
-                ALTER TABLE "user" ADD COLUMN avatar_path VARCHAR(500);
+                ALTER TABLE family_members ADD COLUMN avatar_path VARCHAR(500);
             END IF;
         END $$;
     ''')
@@ -97,7 +111,7 @@ def init_database():
             value INTEGER NOT NULL,
             transaction_type VARCHAR(50),
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES "user"(user_id)
+            FOREIGN KEY (user_id) REFERENCES family_members(user_id)
         )
     ''')
     
@@ -171,7 +185,7 @@ def init_database():
         CREATE TABLE IF NOT EXISTS cash_balances (
             user_id INTEGER PRIMARY KEY,
             cash_balance DOUBLE PRECISION DEFAULT 0.0,
-            FOREIGN KEY (user_id) REFERENCES "user"(user_id)
+            FOREIGN KEY (user_id) REFERENCES family_members(user_id)
         )
     ''')
     
@@ -290,7 +304,7 @@ def init_database():
     conn.close()
     
     print(f"Database initialized successfully!")
-    print("Tables created: chores, user, transactions, cash_balances, settings")
+    print("Tables created: chores, family_members, transactions, cash_balances, settings")
 
 if __name__ == '__main__':
     init_database()

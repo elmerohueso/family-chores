@@ -95,3 +95,4 @@ The application will be available at `http://localhost:8000` (or at the specifie
 #### Volumes
 - `db_data`: PostgreSQL data directory
 - `avatar_data`: User avatar images
+- `backup_data`: Database backups
