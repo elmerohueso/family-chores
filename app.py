@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, send_from_directory, session, redirect, url_for, has_request_context
+from flask import Flask, jsonify, request, render_template, send_from_directory, session, redirect, url_for, has_request_context, g
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
@@ -312,10 +312,71 @@ def kid_permission_required(permission_key):
         return decorated_function
     return decorator
 
+
+
 @app.route('/')
 def index():
     """Home page."""
     return render_template('index.html')
+
+
+# Global auth enforcement: require authentication for all routes except a small whitelist
+@app.before_request
+def require_auth_for_everything():
+    # Allow Flask internal endpoints and OPTIONS preflight
+    if request.method == 'OPTIONS' or request.endpoint == 'static':
+        return None
+
+    path = request.path or ''
+    # Whitelist: index page and the auth endpoints the login page uses
+    whitelist = set([
+        '/',
+        '/api/auth/login',
+        '/api/auth-check',
+        '/api/tenant-login',
+        '/api/auth/refresh',
+        '/api/auth/logout',
+        # Allow a few read-only endpoints used by head/includes and utils
+        '/api/version',
+        '/api/system-time',
+        '/api/get-role',
+    ])
+
+    # Allow static assets and avatar serving without auth (so login page can load)
+    if path.endswith('favicon.ico'):
+        return None
+
+    if path in whitelist:
+        return None
+
+    # Perform authentication: accept Bearer JWT or valid refresh token cookie
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth.split(None, 1)[1]
+        try:
+            payload = jwt.decode(token, app.secret_key, algorithms=[JWT_ALGORITHM])
+            g.tenant_id = payload.get('sub')
+            return None
+        except Exception:
+            pass
+
+    refresh = request.cookies.get('refresh_token')
+    if refresh:
+        conn = None
+        try:
+            conn = get_db_connection()
+            valid = validate_refresh_token(conn, refresh)
+            if valid:
+                g.tenant_id = valid['tenant_id']
+                return None
+        finally:
+            if conn:
+                conn.close()
+
+    # Not authenticated: API -> 401 JSON, pages -> redirect to index
+    if path.startswith('/api/'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    return redirect(url_for('index'))
 
 
 @app.route('/dashboard')
@@ -404,7 +465,8 @@ def api_auth_login():
     cur = conn.cursor()
 
     # Fetch stored password hash for tenant and verify using Argon2 only.
-    cur.execute("SELECT tenant_id, tenant_password FROM tenants WHERE tenant_name = %s", (tenant_name,))
+    # Perform case-insensitive tenant lookup so usernames are not case-sensitive
+    cur.execute("SELECT tenant_id, tenant_password FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (tenant_name,))
     row = cur.fetchone()
     if not row:
         cur.close()
@@ -493,7 +555,15 @@ def api_auth_logout():
 
     resp = jsonify({'success': True})
     # Clear cookie
+    # Clear refresh token and tenant association cookies
     resp.set_cookie('refresh_token', '', expires=0)
+    resp.set_cookie('tenant_id', '', expires=0)
+
+    # Also clear UI session role (kid/parent) so frontend role gating resets
+    try:
+        session.pop('user_role', None)
+    except Exception:
+        pass
     try:
         log_system_event('logout', 'Tenant logged out', None, 'success')
     except Exception:
@@ -522,7 +592,8 @@ def api_tenant_login():
     cur = conn.cursor()
 
     # Look up tenant credentials
-    cur.execute("SELECT tenant_id, tenant_password FROM tenants WHERE tenant_name = %s", (tenant,))
+    # Perform case-insensitive tenant lookup so usernames are not case-sensitive
+    cur.execute("SELECT tenant_id, tenant_password FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (tenant,))
     row = cur.fetchone()
     if not row:
         cur.close()

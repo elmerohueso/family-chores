@@ -567,15 +567,7 @@ async function logout() {
  * client-side stored tenant tokens before redirecting to `/`.
  */
 async function tenantLogout() {
-    try {
-        await fetch('/api/auth/logout', {
-            method: 'POST'
-        });
-    } catch (err) {
-        console.error('Error calling tenant logout endpoint:', err);
-    }
-
-    // Clear any locally stored tokens (non-HttpOnly tokens if present)
+    // Immediately clear any locally stored tokens and in-memory role so UI updates
     try {
         localStorage.removeItem('access_token');
         localStorage.removeItem('tenant_name');
@@ -583,6 +575,25 @@ async function tenantLogout() {
         // Also clear legacy/login token used by the tenant UI
         localStorage.removeItem('fc_token');
     } catch (e) {}
+
+    try {
+        // Clear in-memory role used by client UI
+        if (typeof setLocalRole === 'function') setLocalRole('');
+    } catch (e) {}
+
+    // Tell the server to revoke the refresh token and clear tenant cookie
+    try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+        console.error('Error calling tenant logout endpoint:', err);
+    }
+
+    // Also clear the server-side session role to keep UI and server in sync
+    try {
+        await setServerRole('');
+    } catch (err) {
+        console.error('Error clearing server role via /api/set-role:', err);
+    }
 
     // Redirect to the root (tenant/login) page
     window.location.href = '/';

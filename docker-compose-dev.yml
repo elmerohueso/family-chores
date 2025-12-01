@@ -41,6 +41,11 @@ services:
       - TZ=America/Denver
       # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
       - LOG_LEVEL=DEBUG
+      # Token lifetimes (seconds): adjust for your security and UX needs
+      # ACCESS_TOKEN_EXPIRES: access token lifetime in seconds (default: 900 = 15 minutes)
+      - ACCESS_TOKEN_EXPIRES=900
+      # REFRESH_TOKEN_EXPIRES: refresh token lifetime in seconds (default: 2592000 = 30 days)
+      - REFRESH_TOKEN_EXPIRES=2592000
     networks:
       - familychores-network
     depends_on:
