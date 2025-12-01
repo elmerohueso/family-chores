@@ -315,7 +315,7 @@ def kid_permission_required(permission_key):
 @app.route('/')
 def index():
     """Home page."""
-    return render_template('index.html')
+    return render_template('dashboard.html')
 
 @app.route('/api/validate-pin', methods=['POST'])
 def validate_pin():
