@@ -396,26 +396,51 @@ async function getTransactions() {
 }
 
 /**
- * Create a new transaction (chore completion or point redemption)
- * @param {Object} transactionData - Transaction data object
- * @param {number} transactionData.user_id - User ID
- * @param {number|null} transactionData.chore_id - Chore ID (null for redemptions)
- * @param {number} transactionData.value - Point value (negative for redemptions)
- * @param {string} [transactionData.redemption_type] - Type of redemption (optional)
- * @returns {Promise<Response>} Fetch response object
+ * Record a chore completion (permission-protected endpoint).
+ * @param {Object} data - { user_id, chore_id, value }
+ * @returns {Promise<Response>} Fetch response
  */
-async function createTransaction(transactionData) {
+async function recordChore(data) {
     try {
-        const response = await fetch('/api/transactions', {
+        const payload = {
+            user_id: data.user_id,
+            chore_id: data.chore_id ?? null,
+            points: data.value ?? data.points ?? 0
+        };
+
+        const response = await fetch('/api/record-chore', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(transactionData)
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
         return response;
     } catch (error) {
-        console.error('Error creating transaction:', error);
+        console.error('Error recording chore:', error);
+        throw error;
+    }
+}
+
+/**
+ * Redeem points (permission-protected endpoint).
+ * @param {Object} data - { user_id, points, redemption_type? }
+ * @returns {Promise<Response>} Fetch response
+ */
+async function redeemPoints(data) {
+    try {
+        const payload = {
+            user_id: data.user_id,
+            points: data.points ?? Math.abs(data.value ?? 0)
+        };
+        if (data.redemption_type) payload.redemption_type = data.redemption_type;
+
+        const response = await fetch('/api/redeem-points', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error redeeming points:', error);
         throw error;
     }
 }
