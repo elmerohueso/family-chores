@@ -260,26 +260,9 @@ def init_database():
         VALUES ('monthly_cooldown_days', '14')
         ON CONFLICT (setting_key) DO NOTHING
     ''')
-    cursor.execute('''
-        INSERT INTO settings (setting_key, setting_value) 
-        VALUES ('kid_allowed_record_chore', '0')
-        ON CONFLICT (setting_key) DO NOTHING
-    ''')
-    cursor.execute('''
-        INSERT INTO settings (setting_key, setting_value) 
-        VALUES ('kid_allowed_redeem_points', '0')
-        ON CONFLICT (setting_key) DO NOTHING
-    ''')
-    cursor.execute('''
-        INSERT INTO settings (setting_key, setting_value) 
-        VALUES ('kid_allowed_withdraw_cash', '0')
-        ON CONFLICT (setting_key) DO NOTHING
-    ''')
-    cursor.execute('''
-        INSERT INTO settings (setting_key, setting_value) 
-        VALUES ('kid_allowed_view_history', '0')
-        ON CONFLICT (setting_key) DO NOTHING
-    ''')
+    # Note: kid permission settings are stored on the `roles` table (authoritative).
+    # Do not insert legacy `kid_allowed_*` settings here to avoid overwriting
+    # the `roles` values during migration when the DB is initialized at startup.
     
     # Migrate kid permission settings into roles table if present, then remove old keys
     cursor.execute('''

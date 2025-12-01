@@ -89,6 +89,7 @@ def decrypt_password(encrypted_password):
         return fernet.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
     except Exception:
         # If decryption fails, return empty string (might be unencrypted legacy data)
+        logger.error("Failed to decrypt password, returning empty string.")
         return ''
 
 # Allowed avatar file extensions
@@ -1898,9 +1899,10 @@ def send_email(to_email, subject, body_html, body_text=None):
         # Decrypt the password
         password = decrypt_password(encrypted_password)
         sender_name = settings_dict.get('email_sender_name', 'Family Chores').strip()
-        
         # Validate required settings
-        if not smtp_server or not smtp_port or not username or not password:
+        if not password:
+            return False, "Please update the email Password in Settings."
+        elif not smtp_server or not smtp_port or not username:
             return False, "Email settings are not configured. Please configure SMTP settings in Settings."
         
         # Create message
@@ -2303,6 +2305,191 @@ def set_last_daily_cash_out_date(date):
         logger.error(f"Error setting last daily cash out date: {e}", exc_info=True)
 
 
+@app.route('/api/record-chore', methods=['POST'])
+@kid_permission_required('kid_allowed_record_chore')
+def record_chore():
+    """Record a chore completion as a transaction (kids can call this if permitted)."""
+    data = request.get_json() or {}
+
+    if not data.get('user_id'):
+        return jsonify({'error': 'user_id is required'}), 400
+    chore_id = data.get('chore_id')
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    description = None
+    points = None
+
+    try:
+        if chore_id:
+            # Lookup stored chore (schema uses `chore` and `point_value`)
+            cursor.execute('SELECT chore, point_value FROM chores WHERE chore_id = %s', (chore_id,))
+            chore = cursor.fetchone()
+            if not chore:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Chore not found'}), 404
+            description = chore.get('chore')
+            points = int(chore.get('point_value') or 0)
+            try:
+                points = int(data.get('points'))
+            except (ValueError, TypeError):
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'points must be an integer'}), 400
+        else:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'chore_id with points is required'}), 400
+
+        if points is None or points <= 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Points must be greater than 0'}), 400
+
+        # Insert transaction and update balance
+        timestamp = get_system_timestamp()
+        cursor.execute(
+            'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
+            (data['user_id'], description, points, 'chore_completed', timestamp)
+        )
+        res = cursor.fetchone()
+        transaction_id = res['transaction_id'] if res else None
+
+        cursor.execute('UPDATE family_members SET balance = balance + %s WHERE user_id = %s', (points, data['user_id']))
+
+        # Get user name for notification/logging
+        cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+        user_result = cursor.fetchone()
+        user_name = user_result.get('full_name') if user_result else 'Unknown User'
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        # Log and notify
+        try:
+            log_system_event('chore_completed', f'{user_name} completed chore', {'user_id': data['user_id'], 'description': description, 'points': points}, 'success')
+        except Exception:
+            pass
+
+        try:
+            send_notification_email('chore_completed', user_name, description, points, data['user_id'])
+        except Exception:
+            pass
+
+        return jsonify({'transaction_id': transaction_id, 'message': f'Chore recorded: {description}', 'points': points}), 200
+    except Exception as e:
+        error_msg = str(e)
+        try:
+            log_system_event('chore_record_error', f'Error recording chore: {error_msg}', {'error': error_msg}, 'error')
+        except Exception:
+            pass
+        try:
+            cursor.close()
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({'error': f'Error recording chore: {error_msg}'}), 500
+
+
+@app.route('/api/redeem-points', methods=['POST'])
+@kid_permission_required('kid_allowed_redeem_points')
+def redeem_points():
+    """Redeem points for rewards or cash (kids can call this if permitted)."""
+    data = request.get_json() or {}
+
+    if not data.get('user_id'):
+        return jsonify({'error': 'user_id is required'}), 400
+
+    # Expect positive integer 'points' to redeem
+    try:
+        points = int(data.get('points'))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'points must be an integer'}), 400
+
+    if points <= 0:
+        return jsonify({'error': 'points must be greater than 0'}), 400
+
+    redemption_type = data.get('redemption_type')  # e.g. 'money' or other
+    description = data.get('description') or (f'Redemed {points} points' + (f' for {redemption_type}' if redemption_type else ''))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        # Verify user balance
+        cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (data['user_id'],))
+        user_row = cursor.fetchone()
+        if not user_row:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+
+        current_balance = int(user_row.get('balance') or 0)
+        if current_balance < points:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': f'Insufficient points balance. User has {current_balance} points.'}), 400
+
+        # If redeeming for money, require multiples of 5 points (5 points = $1)
+        if redemption_type == 'money':
+            if points % 5 != 0:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Points must be a multiple of 5 to redeem for money (5 points = $1)'}), 400
+            cash_amount = points // 5
+            # Ensure cash_balance record exists
+            cursor.execute('INSERT INTO cash_balances (user_id, cash_balance) VALUES (%s, 0.0) ON CONFLICT (user_id) DO NOTHING', (data['user_id'],))
+            cursor.execute('UPDATE cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s', (float(cash_amount), data['user_id']))
+
+        # Insert transaction (store negative points)
+        timestamp = get_system_timestamp()
+        cursor.execute(
+            'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
+            (data['user_id'], description, -points, 'points_redemption', timestamp)
+        )
+        res = cursor.fetchone()
+        transaction_id = res['transaction_id'] if res else None
+
+        # Subtract points from user balance
+        cursor.execute('UPDATE family_members SET balance = balance - %s WHERE user_id = %s', (points, data['user_id']))
+
+        # Get user name for notification/logging
+        cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+        user_result = cursor.fetchone()
+        user_name = user_result.get('full_name') if user_result else 'Unknown User'
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        # Log and notify
+        try:
+            log_system_event('points_redeemed', f'{user_name} redeemed points', {'user_id': data['user_id'], 'points': points, 'redemption_type': redemption_type}, 'success')
+        except Exception:
+            pass
+
+        try:
+            send_notification_email('points_redeemed', user_name, description, points, data['user_id'])
+        except Exception:
+            pass
+
+        return jsonify({'transaction_id': transaction_id, 'message': f'Redeemed {points} points', 'new_balance': current_balance - points}), 200
+    except Exception as e:
+        error_msg = str(e)
+        try:
+            log_system_event('redeem_points_error', f'Error redeeming points: {error_msg}', {'error': error_msg}, 'error')
+        except Exception:
+            pass
+        try:
+            cursor.close()
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({'error': f'Error redeeming points: {error_msg}'}), 500
+
 def send_daily_digest_email(force=False):
     """Generate and send daily digest email with today's history and current balances.
     
@@ -2312,198 +2499,6 @@ def send_daily_digest_email(force=False):
     # Check if daily digest is enabled (unless forced)
     if not force and not get_email_notification_setting('email_notify_daily_digest'):
         return
-
-
-    @app.route('/api/record-chore', methods=['POST'])
-    @kid_permission_required('kid_allowed_record_chore')
-    def record_chore():
-        """Record a chore completion as a transaction (kids can call this if permitted)."""
-        data = request.get_json() or {}
-
-        if not data.get('user_id'):
-            return jsonify({'error': 'user_id is required'}), 400
-
-        # Prefer chore_id (stored chore), but allow ad-hoc chore_name with points
-        chore_id = data.get('chore_id')
-        chore_name = data.get('chore_name')
-
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-        description = None
-        points = None
-
-        try:
-            if chore_id:
-                # Lookup stored chore
-                cursor.execute('SELECT chore_name, points FROM chores WHERE chore_id = %s', (chore_id,))
-                chore = cursor.fetchone()
-                if not chore:
-                    cursor.close()
-                    conn.close()
-                    return jsonify({'error': 'Chore not found'}), 404
-                description = chore.get('chore_name')
-                points = int(chore.get('points') or 0)
-            elif chore_name and 'points' in data:
-                description = chore_name
-                try:
-                    points = int(data.get('points'))
-                except (ValueError, TypeError):
-                    cursor.close()
-                    conn.close()
-                    return jsonify({'error': 'points must be an integer'}), 400
-            else:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Either chore_id or chore_name with points is required'}), 400
-
-            if points is None or points <= 0:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Points must be greater than 0'}), 400
-
-            # Insert transaction and update balance
-            timestamp = get_system_timestamp()
-            cursor.execute(
-                'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
-                (data['user_id'], description, points, 'chore_completed', timestamp)
-            )
-            res = cursor.fetchone()
-            transaction_id = res['transaction_id'] if res else None
-
-            cursor.execute('UPDATE family_members SET balance = balance + %s WHERE user_id = %s', (points, data['user_id']))
-
-            # Get user name for notification/logging
-            cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
-            user_result = cursor.fetchone()
-            user_name = user_result.get('full_name') if user_result else 'Unknown User'
-
-            conn.commit()
-            cursor.close()
-            conn.close()
-
-            # Log and notify
-            try:
-                log_system_event('chore_completed', f'{user_name} completed chore', {'user_id': data['user_id'], 'description': description, 'points': points}, 'success')
-            except Exception:
-                pass
-
-            try:
-                send_notification_email('chore_completed', user_name, description, points, data['user_id'])
-            except Exception:
-                pass
-
-            return jsonify({'transaction_id': transaction_id, 'message': f'Chore recorded: {description}', 'points': points}), 200
-        except Exception as e:
-            error_msg = str(e)
-            try:
-                log_system_event('chore_record_error', f'Error recording chore: {error_msg}', {'error': error_msg}, 'error')
-            except Exception:
-                pass
-            try:
-                cursor.close()
-                conn.close()
-            except Exception:
-                pass
-            return jsonify({'error': f'Error recording chore: {error_msg}'}), 500
-
-
-    @app.route('/api/redeem-points', methods=['POST'])
-    @kid_permission_required('kid_allowed_redeem_points')
-    def redeem_points():
-        """Redeem points for rewards or cash (kids can call this if permitted)."""
-        data = request.get_json() or {}
-
-        if not data.get('user_id'):
-            return jsonify({'error': 'user_id is required'}), 400
-
-        # Expect positive integer 'points' to redeem
-        try:
-            points = int(data.get('points'))
-        except (ValueError, TypeError):
-            return jsonify({'error': 'points must be an integer'}), 400
-
-        if points <= 0:
-            return jsonify({'error': 'points must be greater than 0'}), 400
-
-        redemption_type = data.get('redemption_type')  # e.g. 'money' or other
-        description = data.get('description') or (f'Redemed {points} points' + (f' for {redemption_type}' if redemption_type else ''))
-
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-        try:
-            # Verify user balance
-            cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (data['user_id'],))
-            user_row = cursor.fetchone()
-            if not user_row:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'User not found'}), 404
-
-            current_balance = int(user_row.get('balance') or 0)
-            if current_balance < points:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': f'Insufficient points balance. User has {current_balance} points.'}), 400
-
-            # If redeeming for money, require multiples of 5 points (5 points = $1)
-            if redemption_type == 'money':
-                if points % 5 != 0:
-                    cursor.close()
-                    conn.close()
-                    return jsonify({'error': 'Points must be a multiple of 5 to redeem for money (5 points = $1)'}), 400
-                cash_amount = points // 5
-                # Ensure cash_balance record exists
-                cursor.execute('INSERT INTO cash_balances (user_id, cash_balance) VALUES (%s, 0.0) ON CONFLICT (user_id) DO NOTHING', (data['user_id'],))
-                cursor.execute('UPDATE cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s', (float(cash_amount), data['user_id']))
-
-            # Insert transaction (store negative points)
-            timestamp = get_system_timestamp()
-            cursor.execute(
-                'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
-                (data['user_id'], description, -points, 'points_redemption', timestamp)
-            )
-            res = cursor.fetchone()
-            transaction_id = res['transaction_id'] if res else None
-
-            # Subtract points from user balance
-            cursor.execute('UPDATE family_members SET balance = balance - %s WHERE user_id = %s', (points, data['user_id']))
-
-            # Get user name for notification/logging
-            cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
-            user_result = cursor.fetchone()
-            user_name = user_result.get('full_name') if user_result else 'Unknown User'
-
-            conn.commit()
-            cursor.close()
-            conn.close()
-
-            # Log and notify
-            try:
-                log_system_event('points_redeemed', f'{user_name} redeemed points', {'user_id': data['user_id'], 'points': points, 'redemption_type': redemption_type}, 'success')
-            except Exception:
-                pass
-
-            try:
-                send_notification_email('points_redeemed', user_name, description, points, data['user_id'])
-            except Exception:
-                pass
-
-            return jsonify({'transaction_id': transaction_id, 'message': f'Redeemed {points} points', 'new_balance': current_balance - points}), 200
-        except Exception as e:
-            error_msg = str(e)
-            try:
-                log_system_event('redeem_points_error', f'Error redeeming points: {error_msg}', {'error': error_msg}, 'error')
-            except Exception:
-                pass
-            try:
-                cursor.close()
-                conn.close()
-            except Exception:
-                pass
-            return jsonify({'error': f'Error redeeming points: {error_msg}'}), 500
-    
     try:
         # Get parent email addresses
         conn = get_db_connection()
