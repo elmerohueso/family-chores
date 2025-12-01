@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, send_from_directory, session, redirect, url_for, has_request_context
+from flask import Flask, jsonify, request, render_template, send_from_directory, session, redirect, url_for, has_request_context, g
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
@@ -16,6 +16,13 @@ from email.utils import formataddr
 from cryptography.fernet import Fernet
 import base64
 import logging
+import jwt
+import secrets
+import hashlib
+from argon2 import PasswordHasher, exceptions as argon2_exceptions
+
+# Argon2 hasher instance (raise if argon2-cffi missing so failures are visible)
+ph = PasswordHasher()
 
 # Configure logging
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
@@ -103,6 +110,66 @@ def get_db_connection():
     """Get a database connection with dictionary cursor."""
     conn = psycopg2.connect(DATABASE_URL)
     return conn
+
+
+# --- JWT / Refresh token helpers ---
+JWT_ALGORITHM = 'HS256'
+# Access token lifetime in seconds (short-lived)
+ACCESS_TOKEN_EXPIRES = int(os.environ.get('ACCESS_TOKEN_EXPIRES', 900))  # 15 minutes default
+# Refresh token lifetime in seconds (long-lived)
+REFRESH_TOKEN_EXPIRES = int(os.environ.get('REFRESH_TOKEN_EXPIRES', 60 * 60 * 24 * 30))  # 30 days
+
+def create_access_token(tenant_id: str):
+    now = datetime.utcnow()
+    payload = {
+        'sub': str(tenant_id),
+        'iat': now,
+        'exp': now + timedelta(seconds=ACCESS_TOKEN_EXPIRES)
+    }
+    token = jwt.encode(payload, app.secret_key, algorithm=JWT_ALGORITHM)
+    return token
+
+def create_refresh_token_record(conn, tenant_id, user_agent=None, ip_address=None):
+    # Create a cryptographically random token, store its sha256 hash in DB
+    token = secrets.token_urlsafe(64)
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    issued_at = datetime.utcnow()
+    expires_at = issued_at + timedelta(seconds=REFRESH_TOKEN_EXPIRES)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO refresh_tokens (tenant_id, token_hash, issued_at, expires_at, user_agent, ip_address) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (tenant_id, token_hash, issued_at, expires_at, user_agent, ip_address)
+    )
+    conn.commit()
+    cur.close()
+    return token, expires_at
+
+# Argon2 password hasher instance
+try:
+    ph = PasswordHasher()
+except Exception:
+    ph = None
+
+def revoke_refresh_token(conn, token):
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    cur = conn.cursor()
+    cur.execute('UPDATE refresh_tokens SET revoked = TRUE WHERE token_hash = %s', (token_hash,))
+    conn.commit()
+    cur.close()
+
+def validate_refresh_token(conn, token):
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    cur = conn.cursor()
+    cur.execute('SELECT id, tenant_id, issued_at, expires_at, revoked FROM refresh_tokens WHERE token_hash = %s', (token_hash,))
+    row = cur.fetchone()
+    cur.close()
+    if not row:
+        return None
+    id_, tenant_id, issued_at, expires_at, revoked = row
+    now = datetime.utcnow()
+    if revoked or expires_at < now:
+        return None
+    return {'id': id_, 'tenant_id': tenant_id}
 
 def log_system_event(log_type, message, details=None, status='success'):
     """Log a system event using the logging module.
@@ -245,10 +312,77 @@ def kid_permission_required(permission_key):
         return decorated_function
     return decorator
 
+
+
 @app.route('/')
 def index():
     """Home page."""
     return render_template('index.html')
+
+
+# Global auth enforcement: require authentication for all routes except a small whitelist
+@app.before_request
+def require_auth_for_everything():
+    # Allow Flask internal endpoints and OPTIONS preflight
+    if request.method == 'OPTIONS' or request.endpoint == 'static':
+        return None
+
+    path = request.path or ''
+    # Whitelist: index page and the auth endpoints the login page uses
+    whitelist = set([
+        '/',
+        '/api/auth/login',
+        '/api/auth-check',
+        '/api/tenant-login',
+        '/api/auth/refresh',
+        '/api/auth/logout',
+        # Allow a few read-only endpoints used by head/includes and utils
+        '/api/version',
+        '/api/system-time',
+        '/api/get-role',
+    ])
+
+    # Allow static assets and avatar serving without auth (so login page can load)
+    if path.endswith('favicon.ico'):
+        return None
+
+    if path in whitelist:
+        return None
+
+    # Perform authentication: accept Bearer JWT or valid refresh token cookie
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth.split(None, 1)[1]
+        try:
+            payload = jwt.decode(token, app.secret_key, algorithms=[JWT_ALGORITHM])
+            g.tenant_id = payload.get('sub')
+            return None
+        except Exception:
+            pass
+
+    refresh = request.cookies.get('refresh_token')
+    if refresh:
+        conn = None
+        try:
+            conn = get_db_connection()
+            valid = validate_refresh_token(conn, refresh)
+            if valid:
+                g.tenant_id = valid['tenant_id']
+                return None
+        finally:
+            if conn:
+                conn.close()
+
+    # Not authenticated: API -> 401 JSON, pages -> redirect to index
+    if path.startswith('/api/'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    return redirect(url_for('index'))
+
+
+@app.route('/dashboard')
+def dashboard_page():
+    """Dashboard route serving the main application UI."""
+    return render_template('dashboard.html')
 
 @app.route('/api/validate-pin', methods=['POST'])
 def validate_pin():
@@ -317,6 +451,244 @@ def get_role():
     """Get current user role."""
     user_role = session.get('user_role')
     return jsonify({'role': user_role}), 200
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_auth_login():
+    data = request.get_json(force=True)
+    tenant_name = data.get('tenant_name')
+    password = data.get('password')
+    if not tenant_name or not password:
+        return jsonify({'error': 'Missing tenant_name or password'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Fetch stored password hash for tenant and verify using Argon2 only.
+    # Perform case-insensitive tenant lookup so usernames are not case-sensitive
+    cur.execute("SELECT tenant_id, tenant_password FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (tenant_name,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    tenant_id, stored = row[0], row[1]
+
+    # Only accept Argon2-formatted hashes (argon2-cffi). Reject other formats.
+    if not (isinstance(stored, str) and stored.startswith('$argon2')):
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    try:
+        ph.verify(stored, password)
+        # Rehash transparently if parameters changed
+        try:
+            if ph.check_needs_rehash(stored):
+                new_hash = ph.hash(password)
+                cur.execute('UPDATE tenants SET tenant_password = %s WHERE tenant_id = %s', (new_hash, tenant_id))
+                conn.commit()
+        except Exception:
+            pass
+    except argon2_exceptions.VerifyMismatchError:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    # Successful authentication - issue tokens
+    access_token = create_access_token(tenant_id)
+    refresh_token, refresh_expires = create_refresh_token_record(conn, tenant_id, request.headers.get('User-Agent'), request.remote_addr)
+
+    # Set refresh token as HttpOnly cookie (note: Secure cookie requires HTTPS in browsers)
+    resp = jsonify({'access_token': access_token, 'expires_in': ACCESS_TOKEN_EXPIRES})
+    resp.set_cookie('refresh_token', refresh_token, httponly=True, secure=False, samesite='Strict', expires=refresh_expires)
+
+    try:
+        log_system_event('login', 'Tenant login success', {'tenant_id': tenant_id}, 'success')
+    except Exception:
+        pass
+
+    cur.close()
+    conn.close()
+    return resp, 200
+
+
+@app.route('/api/auth/refresh', methods=['POST'])
+def api_auth_refresh():
+    # Read refresh token from cookie or JSON body
+    token = request.cookies.get('refresh_token') or (request.get_json(silent=True) or {}).get('refresh_token')
+    if not token:
+        return jsonify({'error': 'Missing refresh token'}), 400
+
+    conn = get_db_connection()
+    valid = validate_refresh_token(conn, token)
+    if not valid:
+        conn.close()
+        return jsonify({'error': 'Invalid or expired refresh token'}), 401
+
+    tenant_id = valid['tenant_id']
+
+    # Rotate refresh token: revoke current and issue a new one
+    revoke_refresh_token(conn, token)
+    new_token, new_expires = create_refresh_token_record(conn, tenant_id, request.headers.get('User-Agent'), request.remote_addr)
+
+    access_token = create_access_token(tenant_id)
+    resp = jsonify({'access_token': access_token, 'expires_in': ACCESS_TOKEN_EXPIRES})
+    resp.set_cookie('refresh_token', new_token, httponly=True, secure=False, samesite='Strict', expires=new_expires)
+
+    conn.close()
+    return resp, 200
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_auth_logout():
+    token = request.cookies.get('refresh_token') or (request.get_json(silent=True) or {}).get('refresh_token')
+    if token:
+        conn = get_db_connection()
+        revoke_refresh_token(conn, token)
+        conn.close()
+
+    resp = jsonify({'success': True})
+    # Clear cookie
+    # Clear refresh token and tenant association cookies
+    resp.set_cookie('refresh_token', '', expires=0)
+    resp.set_cookie('tenant_id', '', expires=0)
+
+    # Also clear UI session role (kid/parent) so frontend role gating resets
+    try:
+        session.pop('user_role', None)
+    except Exception:
+        pass
+    try:
+        log_system_event('logout', 'Tenant logged out', None, 'success')
+    except Exception:
+        pass
+    return resp, 200
+
+
+@app.route('/api/tenant-login', methods=['POST'])
+def api_tenant_login():
+    """Tenant login endpoint used by the tenant sign-in page.
+
+    Expects JSON: { tenant: <tenant_name>, username: <optional>, password: <password> }
+    On success:
+      - sets HttpOnly cookie `tenant_id` (so JS cannot read it)
+      - sets HttpOnly cookie `refresh_token` (rotation/refresh flow)
+      - returns JSON { token: <access_token>, expires_in: <seconds> }
+    """
+    data = request.get_json(force=True) or {}
+    tenant = data.get('tenant') or data.get('tenant_name')
+    password = data.get('password')
+
+    if not tenant or not password:
+        return jsonify({'error': 'Missing tenant or password'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Look up tenant credentials
+    # Perform case-insensitive tenant lookup so usernames are not case-sensitive
+    cur.execute("SELECT tenant_id, tenant_password FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (tenant,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    tenant_id, stored = row[0], row[1]
+
+    # Only accept Argon2-formatted hashes
+    if not (isinstance(stored, str) and stored.startswith('$argon2')):
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    try:
+        ph.verify(stored, password)
+        # Rehash transparently if parameters changed
+        try:
+            if ph.check_needs_rehash(stored):
+                new_hash = ph.hash(password)
+                cur.execute('UPDATE tenants SET tenant_password = %s WHERE tenant_id = %s', (new_hash, tenant_id))
+                conn.commit()
+        except Exception:
+            pass
+    except argon2_exceptions.VerifyMismatchError:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    # Issue tokens
+    access_token = create_access_token(tenant_id)
+    refresh_token, refresh_expires = create_refresh_token_record(conn, tenant_id, request.headers.get('User-Agent'), request.remote_addr)
+
+    # Set cookies: refresh_token and tenant_id (HttpOnly)
+    resp = jsonify({'token': access_token, 'expires_in': ACCESS_TOKEN_EXPIRES})
+    # refresh_token cookie (long-lived)
+    resp.set_cookie('refresh_token', refresh_token, httponly=True, secure=False, samesite='Strict', expires=refresh_expires)
+    # tenant_id cookie (HttpOnly so JS cannot access it)
+    # set expiry similar to refresh token so tenant association persists
+    resp.set_cookie('tenant_id', str(tenant_id), httponly=True, secure=False, samesite='Strict', expires=refresh_expires)
+
+    try:
+        log_system_event('tenant_login', 'Tenant login success', {'tenant_id': tenant_id}, 'success')
+    except Exception:
+        pass
+
+    cur.close()
+    conn.close()
+    return resp, 200
+
+
+@app.route('/api/auth-check', methods=['GET'])
+def api_auth_check():
+    """Validate current authentication state.
+
+    Checks Authorization: Bearer <token> header or refresh_token cookie. If valid,
+    returns 200 and ensures HttpOnly `tenant_id` cookie is set.
+    """
+    # 1) Try Authorization header (Bearer)
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth.split(None, 1)[1]
+        try:
+            payload = jwt.decode(token, app.secret_key, algorithms=[JWT_ALGORITHM])
+            tenant_id = payload.get('sub')
+            # Ensure tenant_id cookie exists and matches; set if missing
+            resp = jsonify({'tenant_id': tenant_id})
+            if not request.cookies.get('tenant_id') or request.cookies.get('tenant_id') != str(tenant_id):
+                expires = datetime.utcnow() + timedelta(seconds=REFRESH_TOKEN_EXPIRES)
+                resp.set_cookie('tenant_id', str(tenant_id), httponly=True, secure=False, samesite='Strict', expires=expires)
+            return resp, 200
+        except Exception:
+            # fall through to check refresh token
+            pass
+
+    # 2) Try refresh token cookie
+    refresh = request.cookies.get('refresh_token')
+    if refresh:
+        conn = get_db_connection()
+        valid = validate_refresh_token(conn, refresh)
+        if valid:
+            tenant_id = valid['tenant_id']
+            # Optionally rotate refresh token here, but keep simple: validate only
+            resp = jsonify({'tenant_id': tenant_id})
+            expires = datetime.utcnow() + timedelta(seconds=REFRESH_TOKEN_EXPIRES)
+            resp.set_cookie('tenant_id', str(tenant_id), httponly=True, secure=False, samesite='Strict', expires=expires)
+            conn.close()
+            return resp, 200
+        conn.close()
+
+    return jsonify({'error': 'Not authenticated'}), 401
 
 @app.route('/api/version', methods=['GET'])
 def get_version():

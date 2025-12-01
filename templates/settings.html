@@ -11,7 +11,7 @@
     <div class="container">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link">← Home</a>
+                <a href="/dashboard" class="nav-link">← Dashboard</a>
             </div>
             <h1>⚙️ Settings</h1>
         </header>
@@ -314,10 +314,17 @@
 
                 <div class="reset-section">
                     <div class="text-title-sm">DANGER ZONE!</div>
-                    <div class="reset-buttons">
-                        <button class="btn btn-red-on-white" onclick="confirmResetPoints()">Reset All Points Balances</button>
-                        <button class="btn btn-red-on-white" onclick="confirmResetCash()">Reset All Cash Balances</button>
-                        <button class="btn btn-red-on-white" onclick="confirmResetTransactions()">Reset All Historical Data</button>
+                        <div class="reset-buttons">
+                            <button class="btn btn-red-on-white" onclick="confirmResetPoints()">Reset All Points</button>
+                            <button class="btn btn-red-on-white" onclick="confirmResetCash()">Reset All Cash</button>
+                            <button class="btn btn-red-on-white" onclick="confirmResetTransactions()">Reset Historical Data</button>
+                        </div>
+                        <!-- Vertical gap between reset button groups -->
+                        <div class="mb-3" aria-hidden="true"></div>
+                        <div class="reset-buttons">
+                            <button class="btn btn-red-on-white" onclick="tenantLogout()">Sign Out</button>
+                        </div>
+                    </div>
                     </div>
                 </div>
             </div>

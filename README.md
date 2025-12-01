@@ -91,6 +91,8 @@ The application will be available at `http://localhost:8000` (or at the specifie
 - `PARENT_PIN` - PIN required for Parent login (default: `1234`)
 - `TZ` - Set to your local timezone (default: `America/Denver`)
 - `LOG_LEVEL` - Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`)
+- `ACCESS_TOKEN_EXPIRES` - Access token lifetime in seconds (default: `900` (15 minutes))
+- `REFRESH_TOKEN_EXPIRES` - Refresh token lifetime in seconds (default: `2592000` (30 days))
 
 #### Volumes
 - `db_data`: PostgreSQL data directory

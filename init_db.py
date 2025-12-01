@@ -260,9 +260,26 @@ def init_database():
         VALUES ('monthly_cooldown_days', '14')
         ON CONFLICT (setting_key) DO NOTHING
     ''')
-    # Note: kid permission settings are stored on the `roles` table (authoritative).
-    # Do not insert legacy `kid_allowed_*` settings here to avoid overwriting
-    # the `roles` values during migration when the DB is initialized at startup.
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('kid_allowed_record_chore', '0')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('kid_allowed_redeem_points', '0')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('kid_allowed_withdraw_cash', '0')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
+    cursor.execute('''
+        INSERT INTO settings (setting_key, setting_value) 
+        VALUES ('kid_allowed_view_history', '0')
+        ON CONFLICT (setting_key) DO NOTHING
+    ''')
     
     # Migrate kid permission settings into roles table if present, then remove old keys
     cursor.execute('''
@@ -357,6 +374,52 @@ def init_database():
         INSERT INTO settings (setting_key, setting_value) 
         VALUES ('parent_email_addresses', '')
         ON CONFLICT (setting_key) DO NOTHING
+    ''')
+
+    # Create tenants table if missing and seed default tenant when newly created.
+    cursor.execute("""
+        SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables WHERE table_name = 'tenants'
+        )
+    """)
+    tenants_exists = cursor.fetchone()[0]
+
+    if not tenants_exists:
+        # Create the table using gen_random_uuid() when available
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tenants (
+                tenant_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                tenant_name TEXT NOT NULL,
+                tenant_password TEXT NOT NULL
+            )
+        ''')
+
+        # Insert default seeded tenant with Argon2-hashed password.
+        default_name = 'Change Me'
+        default_password = 'Abc.123!'
+
+        # Use Argon2 (argon2-cffi) exclusively for password hashing.
+        # If argon2-cffi is not installed this will raise ImportError to surface the problem.
+        from argon2 import PasswordHasher
+        ph = PasswordHasher()
+        hashed = ph.hash(default_password)
+        cursor.execute(
+            "INSERT INTO tenants (tenant_name, tenant_password) VALUES (%s, %s)",
+            (default_name, hashed)
+        )
+    
+    # Create refresh_tokens table for opaque refresh token storage
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id SERIAL PRIMARY KEY,
+            tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            token_hash VARCHAR(128) NOT NULL,
+            issued_at TIMESTAMP NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            revoked BOOLEAN DEFAULT FALSE,
+            user_agent TEXT,
+            ip_address TEXT
+        )
     ''')
     
     # Commit changes and close connection

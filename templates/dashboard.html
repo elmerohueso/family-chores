@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Chores</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+    {% include '_head_includes.html' %}
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="system-info">
+                <div style="text-align: center; width: 100%;">
+                    <div class="label-sm">System Time</div>
+                    <div class="system-time-value" id="systemTimeInfo">--:-- --</div>
+                </div>
+            </div>
+            <div class="header-nav">
+                <div></div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+                    <a href="/settings" class="settings-link" id="settingsLink" title="Settings">⚙️</a>
+                    <button class="btn-logout" id="logoutBtn" onclick="logout()" title="Logout">Select Role</button>
+                </div>
+            </div>
+        </header>
+
+
+        <div class="card">
+            
+            <h1>🏠 Family Chores</h1>
+            <div id="loading" class="loading">Loading users...</div>
+            <div id="usersContainer" style="display: none;">
+                <div id="usersGrid" class="users-grid"></div>
+                <div id="emptyState" class="empty-state" style="display: none;">
+                    <div class="empty-state-icon">👤</div>
+                    <div class="empty-state-text">No users found. Add your first family member from Settings!</div>
+                </div>
+            </div>
+            <div style="text-align: center; width: 100%; margin-top: 20px;">
+                <a href="/chores" class="btn btn-white-on-purple" style="margin: 12px auto 0;">Chore List</a>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Role Selection Modal -->
+    <div id="roleSelectionOverlay" class="overlay overlay-dark">
+        <div class="overlay-content">
+            <div class="text-title">Welcome!</div>
+            <div class="text-body text-body-lg">Are you a Kid or a Parent?</div>
+            <div class="role-buttons">
+                <button class="btn-white-on-purple" id="parentBtn" onclick="showPinInput()">Parent</button>
+                <button class="btn-white-on-pink" id="kidBtn" onclick="selectRole('kid')">Kid</button>
+            </div>
+            <div class="pin-input-section" id="pinInputSection">
+                <div class="pin-input-group">
+                    <label for="pinInput" class="label-form label-form-bold">Enter Parent PIN:</label>
+                    <input type="password" id="pinInput" class="form-input form-input-pin" placeholder="----" maxlength="10" autocomplete="off">
+                    <div id="pinError" class="pin-error">Invalid PIN. Please try again.</div>
+                </div>
+                <div class="role-buttons">
+                    <button class="btn-white-on-purple" id="submitPinBtn" onclick="validatePinAndLogin()">Login</button>
+                    <button class="btn-gray-on-cream" onclick="hidePinInput()" style="background: #f5f5f5; color: #333;">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Avatar Upload Modal -->
+    <div id="avatarUploadOverlay" class="overlay">
+        <div class="overlay-content">
+            <h2 style="margin-bottom: 20px; color: #333;">Change Avatar</h2>
+            <img id="avatarPreview" class="avatar-preview-image" alt="Preview">
+            <div class="file-input-wrapper">
+                <label for="avatarFile" class="label-button">Choose Image</label>
+                <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="handleAvatarPreview(event)">
+            </div>
+            <div class="avatar-upload-actions">
+                <button class="btn btn-white-on-purple" onclick="processAvatar()" id="uploadBtn" disabled>Upload</button>
+                <button class="btn btn-gray-on-cream" onclick="closeAvatarUpload()">Cancel</button>
+            </div>
+            <div id="avatarMessage" style="margin-top: 15px; font-size: 14px; color: #666; display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentUserId = null;
+        let selectedAvatarFile = null;
+        let userRole = null;
+        let permissions = {
+            record_chore: false,
+            redeem_points: false,
+            withdraw_cash: false,
+            view_history: false
+        };
+
+        // getRole is now defined in static/js/utils.js
+
+        // setRole is now defined in static/js/utils.js
+
+        function showPinInput() {
+            document.getElementById('pinInputSection').classList.add('show');
+            document.getElementById('pinInput').focus();
+            document.getElementById('parentBtn').disabled = true;
+            document.getElementById('kidBtn').disabled = true;
+        }
+
+        function hidePinInput() {
+            document.getElementById('pinInputSection').classList.remove('show');
+            document.getElementById('pinInput').value = '';
+            document.getElementById('pinError').classList.remove('show');
+            document.getElementById('parentBtn').disabled = false;
+            document.getElementById('kidBtn').disabled = false;
+        }
+
+        async function validatePinAndLogin() {
+            const pinInput = document.getElementById('pinInput');
+            const pin = pinInput.value.trim();
+            const pinError = document.getElementById('pinError');
+            const submitBtn = document.getElementById('submitPinBtn');
+
+            if (!pin) {
+                pinError.textContent = 'Please enter a PIN';
+                pinError.classList.add('show');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+
+            const result = await validatePin(pin);
+
+            if (result.valid) {
+                // PIN is valid, proceed with Parent login
+                selectRole('parent');
+            } else {
+                // Invalid PIN
+                pinError.textContent = result.error || 'Invalid PIN. Please try again.';
+                pinError.classList.add('show');
+                pinInput.value = '';
+                pinInput.focus();
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Login';
+            }
+        }
+
+        async function selectRole(role) {
+            const response = await setServerRole(role);
+            if (response && response.ok) {
+                setLocalRole(role);
+                // Reload permissions in case settings changed
+                permissions = await getPermissions();
+                const roleOverlay = document.getElementById('roleSelectionOverlay');
+                roleOverlay.classList.remove('show');
+                roleOverlay.classList.add('hidden');
+                applyRoleRestrictions();
+                // Load users after role is set to apply restrictions
+                loadUsers();
+                loadAppFooter();
+            } else {
+                console.error('Failed to set role on server');
+            }
+        }
+
+        // logout is now defined in static/js/utils.js
+
+        function applyRoleRestrictions() {
+            const role = getRole();
+            
+            if (role === 'kid') {
+                // Hide settings link
+                const settingsLink = document.getElementById('settingsLink');
+                if (settingsLink) {
+                    settingsLink.style.display = 'none';
+                }
+                // Hide tenant logout for kids
+                const tenantLogoutBtn = document.getElementById('tenantLogoutBtn');
+                if (tenantLogoutBtn) {
+                    tenantLogoutBtn.style.display = 'none';
+                }
+                
+                // Disable avatar uploads
+                document.querySelectorAll('.user-avatar, .avatar-placeholder').forEach(el => {
+                    el.style.pointerEvents = 'none';
+                    el.style.opacity = '0.5';
+                    el.style.cursor = 'default';
+                });
+                
+                // Reload users to apply button restrictions
+                if (document.getElementById('usersContainer').style.display !== 'none') {
+                    loadUsers(); // Reload to apply restrictions
+                }
+            } else {
+                // Parent - remove all restrictions
+                const settingsLink = document.getElementById('settingsLink');
+                if (settingsLink) {
+                    settingsLink.style.display = '';
+                }
+                // Show tenant logout for parents
+                const tenantLogoutBtn = document.getElementById('tenantLogoutBtn');
+                if (tenantLogoutBtn) {
+                    tenantLogoutBtn.style.display = '';
+                }
+                
+                document.querySelectorAll('.user-avatar, .avatar-placeholder').forEach(el => {
+                    el.style.pointerEvents = '';
+                    el.style.opacity = '';
+                    el.style.cursor = '';
+                });
+            }
+        }
+
+        // getPermissions is now defined in static/js/utils.js
+
+        // Show role selection on page load if not already selected
+        window.addEventListener('DOMContentLoaded', async () => {
+            // Clean URL to show base path only
+            cleanUrl();
+            
+            // Load kid permissions first
+            permissions = await getPermissions();
+            
+            const role = getRole();
+            if (!role) {
+                // Show role selection modal - wait for user to select
+                document.getElementById('roleSelectionOverlay').classList.remove('hidden');
+                    document.getElementById('roleSelectionOverlay').classList.add('show');
+            } else {
+                userRole = role;
+                document.getElementById('roleSelectionOverlay').classList.add('hidden');
+                applyRoleRestrictions();
+                loadUsers();
+            }
+
+            // PIN input - allow Enter key to submit
+            const pinInput = document.getElementById('pinInput');
+            if (pinInput) {
+                pinInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        validatePinAndLogin();
+                    }
+                });
+            }
+        });
+        async function loadUsers() {
+            try {
+                const users = await getUsers();
+
+                const loadingDiv = document.getElementById('loading');
+                const usersContainer = document.getElementById('usersContainer');
+                const usersGrid = document.getElementById('usersGrid');
+                const emptyState = document.getElementById('emptyState');
+
+                loadingDiv.style.display = 'none';
+                usersContainer.style.display = 'block';
+
+                if (users.length === 0) {
+                    emptyState.style.display = 'block';
+                    return;
+                }
+
+                emptyState.style.display = 'none';
+
+                // Display users
+                usersGrid.innerHTML = users.map(user => {
+                    let avatarUrl = null;
+                    if (user.avatar_path) {
+                        // avatar_path is stored as 'avatars/filename' or just 'filename'
+                        const filename = user.avatar_path.includes('/') ? user.avatar_path.split('/').pop() : user.avatar_path;
+                        avatarUrl = `/avatars/${filename}`;
+                    }
+                    return `
+                        <div class="user-card">
+                            ${getRole() !== 'kid' 
+                                ? (avatarUrl 
+                                    ? `<img src="${avatarUrl}" alt="${escapeHtml(user.full_name)}" class="user-avatar" onclick="event.stopPropagation(); openAvatarUpload(${user.user_id})" title="Click to change avatar" style="position: relative; z-index: 2;">`
+                                    : `<div class="avatar-placeholder" onclick="event.stopPropagation(); openAvatarUpload(${user.user_id})" style="cursor: pointer; position: relative; z-index: 2;" title="Click to add avatar"></div>`
+                                )
+                                : (avatarUrl 
+                                    ? `<img src="${avatarUrl}" alt="${escapeHtml(user.full_name)}" class="user-avatar" style="position: relative; z-index: 2;">`
+                                    : `<div class="avatar-placeholder" style="position: relative; z-index: 2;"></div>`
+                                )
+                            }
+                            <div class="user-name" style="position: relative; z-index: 2;">${escapeHtml(user.full_name)}</div>
+                            <div class="balance points" style="position: relative; z-index: 2;">${user.balance || 0}</div>
+                            <div class="label-sm" style="position: relative; z-index: 2;">Points Balance</div>
+                            <div class="balance cash" style="position: relative; z-index: 2;">$${(user.cash_balance || 0).toFixed(2)}</div>
+                            <div class="label-sm" style="position: relative; z-index: 2;">Cash Balance</div>
+                            <div class="user-actions">
+                                ${getRole() !== 'kid' ? `
+                                    <a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>
+                                    <a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>
+                                    <a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>
+                                ` : `
+                                    ${permissions.record_chore ? `<a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>` : ''}
+                                    ${permissions.redeem_points ? `<a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>` : ''}
+                                    ${permissions.withdraw_cash ? `<a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>` : ''}
+                                `}
+                                ${(getRole() !== 'kid' || permissions.view_history) ? `<a href="/history?user_id=${user.user_id}" class="btn btn-blue-on-aero btn-sm" onclick="event.stopPropagation();" style="display: block;">View History</a>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading users:', error);
+                document.getElementById('loading').textContent = 'Error loading users. Please try again.';
+            }
+        }
+
+        // escapeHtml moved to static/js/utils.js
+
+        function openAvatarUpload(userId) {
+            currentUserId = userId;
+            selectedAvatarFile = null;
+            document.getElementById('avatarPreview').classList.remove('show');
+            document.getElementById('avatarFile').value = '';
+            document.getElementById('uploadBtn').disabled = true;
+            document.getElementById('avatarMessage').style.display = 'none';
+            document.getElementById('avatarUploadOverlay').classList.add('show');
+        }
+
+        function closeAvatarUpload() {
+            document.getElementById('avatarUploadOverlay').classList.remove('show');
+            currentUserId = null;
+            selectedAvatarFile = null;
+        }
+
+        function handleAvatarPreview(event) {
+            previewAvatar(event, {
+                previewElementId: 'avatarPreview',
+                fileInputId: 'avatarFile',
+                onSuccess: (file) => {
+                    selectedAvatarFile = file;
+                    document.getElementById('uploadBtn').disabled = false;
+                    document.getElementById('avatarMessage').style.display = 'none';
+                },
+                onError: (message) => {
+                    showAvatarMessage(message, true);
+                    selectedAvatarFile = null;
+                    document.getElementById('uploadBtn').disabled = true;
+                }
+            });
+        }
+
+        function showAvatarMessage(text, isError = false) {
+            const messageDiv = document.getElementById('avatarMessage');
+            messageDiv.textContent = text;
+            messageDiv.style.color = isError ? '#d32f2f' : '#2e7d32';
+            messageDiv.style.display = 'block';
+        }
+
+        async function processAvatar() {            
+            try {
+                const response = await uploadAvatar(currentUserId, selectedAvatarFile);
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAvatarMessage('Avatar uploaded successfully!');
+                    setTimeout(() => {
+                        closeAvatarUpload();
+                        loadUsers(); // Reload to show new avatar
+                    }, 1000);
+                } else {
+                    showAvatarMessage(result.error || 'Error uploading avatar', true);
+                }
+            } catch (error) {
+                showAvatarMessage('Network error. Please try again.', true);
+                console.error('Error:', error);
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('avatarUploadOverlay').addEventListener('click', (e) => {
+            if (e.target.id === 'avatarUploadOverlay') {
+                closeAvatarUpload();
+            }
+        });
+
+        let serverTimeBase = null; // Base server time components [hours, minutes, seconds] when last synced
+        let serverTimeBaseMs = 0; // Browser time (ms) when we last synced
+        
+        // syncServerTime moved to static/js/utils.js
+        async function applyServerTimeSync() {
+            const result = await syncServerTime();
+            if (result) {
+                serverTimeBase = [result.hours, result.minutes, result.seconds];
+                serverTimeBaseMs = result.nowMs;
+            } else {
+                serverTimeBase = null; // Fallback handled in display function
+            }
+            updateSystemTimeDisplay();
+        }
+        
+        function updateSystemTimeDisplay() {
+            if (!serverTimeBase) {
+                // Fallback to browser time if not synced yet
+                const now = new Date();
+                const hours = now.getHours();
+                const minutes = now.getMinutes();
+                const seconds = now.getSeconds();
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                const displayHours = hours % 12 || 12;
+                const displayMinutes = minutes.toString().padStart(2, '0');
+                const displaySeconds = seconds.toString().padStart(2, '0');
+                const timeString = `${displayHours}:${displayMinutes}:${displaySeconds} ${ampm}`;
+                document.getElementById('systemTimeInfo').textContent = timeString;
+                return;
+            }
+            
+            // Calculate elapsed time since last sync
+            const elapsedMs = Date.now() - serverTimeBaseMs;
+            const elapsedSeconds = Math.floor(elapsedMs / 1000);
+            
+            // Add elapsed time to base server time
+            let [hours, minutes, seconds] = serverTimeBase;
+            seconds += elapsedSeconds;
+            
+            // Handle overflow
+            minutes += Math.floor(seconds / 60);
+            seconds = seconds % 60;
+            hours += Math.floor(minutes / 60);
+            minutes = minutes % 60;
+            hours = hours % 24;
+            
+            // Format and display
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours % 12 || 12;
+            const displayMinutes = minutes.toString().padStart(2, '0');
+            const displaySeconds = seconds.toString().padStart(2, '0');
+            
+            const timeString = `${displayHours}:${displayMinutes}:${displaySeconds} ${ampm}`;
+            document.getElementById('systemTimeInfo').textContent = timeString;
+        }
+
+        // Sync with server on load and every 30 minutes to prevent drift
+        applyServerTimeSync();
+        setInterval(applyServerTimeSync, 30 * 60 * 1000); // Sync every 30 minutes
+        
+        // Update display every second
+        setInterval(updateSystemTimeDisplay, 1000);
+
+        // loadAppFooter moved to static/js/utils.js
+
+        // Load footer on page load
+        loadAppFooter();
+    </script>
+
+    <!-- App Footer -->
+    <div class="app-footer">
+        <span class="app-footer-version" id="appVersion"></span>
+        <a href="#" id="appGithub" class="app-footer-github" target="_blank" rel="noopener noreferrer" title="View on GitHub">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+        </a>
+    </div>
+</body>
+</html>
