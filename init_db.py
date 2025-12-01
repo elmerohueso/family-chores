@@ -408,6 +408,47 @@ def init_database():
             (default_name, hashed)
         )
     
+    # Ensure we have at least one tenant and capture a default tenant id for backfilling
+    cursor.execute("SELECT tenant_id FROM tenants LIMIT 1")
+    row = cursor.fetchone()
+    default_tenant_id = None
+    if row:
+        default_tenant_id = row[0]
+
+    # Helper: add tenant_id column, backfill, make NOT NULL, and add FK constraint for a table if missing
+    def ensure_tenant_on_table(table_name):
+        if not default_tenant_id:
+            return
+        constraint_name = f"{table_name}_tenant_id_fkey"
+        # Wrap in DO block so SQL errors don't stop migration when table missing
+        sql = f"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}') THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = '{table_name}' AND column_name = 'tenant_id'
+                ) THEN
+                    ALTER TABLE {table_name} ADD COLUMN tenant_id UUID DEFAULT '{default_tenant_id}'::uuid;
+                    UPDATE {table_name} SET tenant_id = '{default_tenant_id}'::uuid WHERE tenant_id IS NULL;
+                    ALTER TABLE {table_name} ALTER COLUMN tenant_id SET NOT NULL;
+                END IF;
+
+                -- Add FK constraint if it's not present
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints 
+                    WHERE table_name = '{table_name}' AND constraint_name = '{constraint_name}'
+                ) THEN
+                    ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE;
+                END IF;
+            END IF;
+        END $$;
+        """
+        cursor.execute(sql)
+
+    # Ensure tenant_id exists on the main app tables
+    for t in ('chores', 'family_members', 'transactions', 'cash_balances', 'roles', 'settings'):
+        ensure_tenant_on_table(t)
     # Create refresh_tokens table for opaque refresh token storage
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS refresh_tokens (
