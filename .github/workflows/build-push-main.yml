@@ -1,4 +1,4 @@
-name: Build and push Docker image
+name: Build and push Docker image for Main Branch
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: authenticat
+      - name: authenticate
         run: |
           echo ${{secrets.CR_PAT}} | docker login ghcr.io -u elmerohueso --password-stdin
       - name: build image
