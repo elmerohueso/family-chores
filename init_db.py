@@ -260,26 +260,32 @@ def init_database():
         VALUES ('monthly_cooldown_days', '14')
         ON CONFLICT (setting_key) DO NOTHING
     ''')
-    cursor.execute('''
-        INSERT INTO settings (setting_key, setting_value) 
-        VALUES ('kid_allowed_record_chore', '0')
-        ON CONFLICT (setting_key) DO NOTHING
-    ''')
-    cursor.execute('''
-        INSERT INTO settings (setting_key, setting_value) 
-        VALUES ('kid_allowed_redeem_points', '0')
-        ON CONFLICT (setting_key) DO NOTHING
-    ''')
-    cursor.execute('''
-        INSERT INTO settings (setting_key, setting_value) 
-        VALUES ('kid_allowed_withdraw_cash', '0')
-        ON CONFLICT (setting_key) DO NOTHING
-    ''')
-    cursor.execute('''
-        INSERT INTO settings (setting_key, setting_value) 
-        VALUES ('kid_allowed_view_history', '0')
-        ON CONFLICT (setting_key) DO NOTHING
-    ''')
+    # Only insert legacy kid permission settings when the `roles` table does not exist.
+    # If `roles` exists, it is authoritative and we should not create these keys
+    # (creating them would cause the migration later to overwrite the roles row).
+    cursor.execute("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'roles')")
+    roles_table_exists = cursor.fetchone()[0]
+    if not roles_table_exists:
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value) 
+            VALUES ('kid_allowed_record_chore', '0')
+            ON CONFLICT (setting_key) DO NOTHING
+        ''')
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value) 
+            VALUES ('kid_allowed_redeem_points', '0')
+            ON CONFLICT (setting_key) DO NOTHING
+        ''')
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value) 
+            VALUES ('kid_allowed_withdraw_cash', '0')
+            ON CONFLICT (setting_key) DO NOTHING
+        ''')
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value) 
+            VALUES ('kid_allowed_view_history', '0')
+            ON CONFLICT (setting_key) DO NOTHING
+        ''')
     
     # Migrate kid permission settings into roles table if present, then remove old keys
     cursor.execute('''
