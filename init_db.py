@@ -91,6 +91,25 @@ def create_refresh_tokens_table(cursor):
     """)
 
 
+def create_tenant_chores_table(cursor):
+    """Create tenant-scoped chores table with the same columns as `chores` plus `tenant_id`.
+
+    Columns mirror the global `chores` table but include a `tenant_id` UUID
+    foreign key so each tenant can have its own chore set.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_chores (
+            chore_id SERIAL PRIMARY KEY,
+            tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            chore VARCHAR(255) NOT NULL,
+            point_value INTEGER NOT NULL,
+            repeat VARCHAR(50),
+            last_completed TIMESTAMP,
+            requires_approval BOOLEAN DEFAULT FALSE
+        )
+    """)
+
+
 def create_default_admin_if_missing(cursor):
     """Insert a default Administrator tenant with password 'ChangeMe!' if no Administrator exists.
 
@@ -148,6 +167,28 @@ def create_default_admin_if_missing(cursor):
                 print(f'Warning: failed to drop settings table after migration: {e}')
     except Exception:
         # If settings table doesn't exist or migration fails, continue gracefully
+        pass
+
+    # Migrate global `chores` into `tenant_chores` for this Administrator tenant
+    try:
+        cursor.execute("SELECT chore, point_value, repeat, last_completed, requires_approval FROM chores")
+        all_chores = cursor.fetchall()
+        if all_chores:
+            for chore, pv, rpt, last_completed, req_appr in all_chores:
+                try:
+                    cursor.execute('''
+                        INSERT INTO tenant_chores (tenant_id, chore, point_value, repeat, last_completed, requires_approval)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    ''', (tenant_id, chore, pv, rpt, last_completed, req_appr))
+                except Exception as e:
+                    print(f'Warning: failed to migrate chore "{chore}": {e}')
+            # Drop the global chores table now that values have been migrated
+            try:
+                cursor.execute('DROP TABLE IF EXISTS chores')
+            except Exception as e:
+                print(f'Warning: failed to drop chores table after migration: {e}')
+    except Exception:
+        # If chores table doesn't exist or migration fails, continue gracefully
         pass
 
     encrypted_pin = None
@@ -251,6 +292,7 @@ def init_database():
         create_tenants_table(cursor)
         create_tenant_settings_table(cursor)
         create_refresh_tokens_table(cursor)
+        create_tenant_chores_table(cursor)
 
         # Ensure a default Administrator tenant exists when the tenants table is new/empty
         create_default_admin_if_missing(cursor)
