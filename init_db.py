@@ -36,9 +36,17 @@ DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST
 
 def create_tenants_table(cursor):
     """Create the `tenants` table if it does not exist."""
+    # Ensure pgcrypto extension is available for gen_random_uuid()
+    try:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+    except Exception:
+        # If creating the extension fails, table creation will still attempt
+        # to declare a UUID default; the database may provide uuid-ossp instead.
+        pass
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tenants (
-            tenant_id SERIAL PRIMARY KEY,
+            tenant_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_name VARCHAR(255) NOT NULL UNIQUE,
             tenant_password VARCHAR(1000) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -55,7 +63,7 @@ def create_tenant_settings_table(cursor):
     """
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tenant_settings (
-            tenant_id INTEGER NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
             setting_key VARCHAR(100) NOT NULL,
             setting_value TEXT,
             PRIMARY KEY (tenant_id, setting_key)
@@ -72,7 +80,7 @@ def create_refresh_tokens_table(cursor):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS refresh_tokens (
             id SERIAL PRIMARY KEY,
-            tenant_id INTEGER NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
             token_hash VARCHAR(255) NOT NULL,
             issued_at TIMESTAMP,
             expires_at TIMESTAMP,
