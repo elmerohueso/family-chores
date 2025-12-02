@@ -142,6 +142,26 @@ def create_tenant_cash_balances_table(cursor):
     """)
 
 
+def create_tenant_transactions_table(cursor):
+    """Create tenant-scoped transactions table mirroring `transactions` plus `tenant_id`.
+
+    The `user_id` foreign key references `tenant_users(user_id)` so tenant-scoped
+    transactions are tied to tenant-specific users.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_transactions (
+            transaction_id SERIAL PRIMARY KEY,
+            tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL,
+            description VARCHAR(255),
+            value INTEGER NOT NULL,
+            transaction_type VARCHAR(50),
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES tenant_users(user_id)
+        )
+    """)
+
+
 def create_default_admin_if_missing(cursor):
     """Insert a default Administrator tenant with password 'ChangeMe!' if no Administrator exists.
 
@@ -259,6 +279,32 @@ def create_default_admin_if_missing(cursor):
         # If cash_balances doesn't exist or migration fails, continue gracefully
         pass
 
+    # Migrate global `transactions` into `tenant_transactions` for this Administrator tenant
+    # Preserve original `transaction_id` values so references remain consistent.
+    try:
+        cursor.execute('SELECT transaction_id, user_id, description, value, transaction_type, timestamp FROM transactions')
+        all_tx = cursor.fetchall()
+        if all_tx:
+            for tx_id, uid, desc, val, tx_type, ts in all_tx:
+                try:
+                    cursor.execute('''
+                        INSERT INTO tenant_transactions (transaction_id, tenant_id, user_id, description, value, transaction_type, timestamp)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (tx_id, tenant_id, uid, desc, val, tx_type, ts))
+                except Exception as e:
+                    print(f'Warning: failed to migrate transaction id={tx_id}: {e}')
+            # Advance tenant_transactions sequence to avoid collisions on future inserts
+            try:
+                cursor.execute("SELECT MAX(transaction_id) FROM tenant_transactions")
+                max_tx = cursor.fetchone()[0]
+                if max_tx:
+                    cursor.execute("SELECT setval(pg_get_serial_sequence('tenant_transactions', 'transaction_id'), %s, true)", (max_tx,))
+            except Exception:
+                pass
+    except Exception:
+        # If transactions table doesn't exist or migration fails, continue gracefully
+        pass
+
     encrypted_pin = None
     pin_value = '1234'
     if _fernet_available:
@@ -363,6 +409,7 @@ def init_database():
         create_tenant_chores_table(cursor)
         create_tenant_users_table(cursor)
         create_tenant_cash_balances_table(cursor)
+        create_tenant_transactions_table(cursor)
 
         # Ensure a default Administrator tenant exists when the tenants table is new/empty
         create_default_admin_if_missing(cursor)
