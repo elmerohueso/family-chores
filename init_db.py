@@ -455,6 +455,47 @@ def init_database():
     # Ensure tenant_id exists on the main app tables
     for t in ('chores', 'family_members', 'transactions', 'cash_balances', 'roles', 'settings'):
         ensure_tenant_on_table(t)
+    # Create tenant-scoped settings table for per-tenant configuration (e.g., parent PIN)
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tenant_settings') THEN
+                CREATE TABLE tenant_settings (
+                    tenant_id UUID NOT NULL,
+                    setting_key VARCHAR(100) NOT NULL,
+                    setting_value TEXT,
+                    PRIMARY KEY (tenant_id, setting_key),
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) ON DELETE CASCADE
+                );
+            END IF;
+        EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+    ''')
+
+    # Migration: If tenants table has a legacy parent_pin column, migrate those values
+    # into tenant_settings. Then drop the legacy column and any related constraint.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'tenants' AND column_name = 'parent_pin'
+            ) THEN
+                -- For each tenant with a non-null legacy parent_pin, insert into tenant_settings
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                SELECT tenant_id, 'parent_pin', parent_pin::text FROM tenants WHERE parent_pin IS NOT NULL;
+
+                -- Drop legacy constraint if present
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints 
+                    WHERE table_name = 'tenants' AND constraint_name = 'tenants_parent_pin_chk'
+                ) THEN
+                    ALTER TABLE tenants DROP CONSTRAINT tenants_parent_pin_chk;
+                END IF;
+
+                -- Drop the legacy column
+                ALTER TABLE tenants DROP COLUMN IF EXISTS parent_pin;
+            END IF;
+        EXCEPTION WHEN others THEN NULL; END $$;
+    ''')
     # Create refresh_tokens table for opaque refresh token storage
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS refresh_tokens (

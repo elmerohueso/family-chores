@@ -22,7 +22,8 @@ Notes:
 #>
 
 param(
-    [string]$Url = 'http://localhost:8000'
+    [string]$Url = 'http://localhost:8000',
+    [string]$ParentPin = ''
 )
 
 function Read-EnvFile([string]$path) {
@@ -71,6 +72,11 @@ if (-not $TenantName) {
     Write-Error "tenant name is required"
     exit 3
 }
+# Disallow whitespace in tenant name
+if ($TenantName -match '\s') {
+    Write-Error "Tenant name must not contain spaces or whitespace characters."
+    exit 7
+}
 
 # 3) Get password (secure)
 function ConvertTo-PlainText([System.Security.SecureString]$ss) {
@@ -82,13 +88,35 @@ function ConvertTo-PlainText([System.Security.SecureString]$ss) {
 $secure = Read-Host -AsSecureString "Password (input hidden)"
 $Password = ConvertTo-PlainText $secure
 
-# 4) Build JSON body
-$body = @{ tenant_name = $TenantName; password = $Password } | ConvertTo-Json
+# 3b) Prompt for Parent PIN (required 4-digit). Allow a few attempts.
+if (-not $ParentPin -or $ParentPin -eq '') {
+    $attempts = 0
+    while ($true) {
+        $ParentPin = Read-Host "Parent PIN (4 digits)"
+        if ($ParentPin -match '^[0-9]{4}$') { break }
+        $attempts += 1
+        if ($attempts -ge 3) {
+            Write-Error "Invalid Parent PIN entered too many times. Expected exactly 4 digits."
+            exit 5
+        }
+        Write-Host "Parent PIN must be exactly 4 digits. Please try again." -ForegroundColor Yellow
+    }
+} else {
+    if (-not ($ParentPin -match '^[0-9]{4}$')) {
+        Write-Error "Provided -ParentPin must be exactly 4 digits."
+        exit 6
+    }
+}
+
+# 4) Build JSON body (include tenant-scoped parent_pin)
+$body = @{ tenant_name = $TenantName; password = $Password; parent_pin = $ParentPin } | ConvertTo-Json
 
 # 5) Send request
 $headers = @{ 'X-Tenant-Creation-Key' = $key }
 $uri = ($Url.TrimEnd('/')) + '/api/tenants'
 
+Write-Host "POST $uri" -ForegroundColor Cyan
+Write-Host "Tenant: $TenantName  ParentPin: **** (masked)" -ForegroundColor Gray
 try {
     $resp = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json' -Headers $headers -ErrorAction Stop
     Write-Host "Tenant created successfully:`n" -ForegroundColor Green
@@ -96,12 +124,19 @@ try {
     exit 0
 } catch {
     $err = $_.Exception
-    if ($err.Response) {
+    if ($err.Response -ne $null) {
         try {
-            $text = $err.Response.GetResponseStream() | ForEach-Object { $_ } | Out-String
-            Write-Error "Request failed: $text"
+            $status = $err.Response.StatusCode.Value__ 2>$null
         } catch {
-            Write-Error "Request failed: $err.Message"
+            $status = $null
+        }
+        try {
+            $sr = New-Object System.IO.StreamReader($err.Response.GetResponseStream())
+            $text = $sr.ReadToEnd()
+            $sr.Close()
+            if ($status) { Write-Error "Request failed: HTTP $status`n$text" } else { Write-Error "Request failed:`n$text" }
+        } catch {
+            Write-Error "Request failed: $($err.Message)"
         }
     } else {
         Write-Error "Request failed: $($_.Exception.Message)"

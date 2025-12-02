@@ -338,6 +338,7 @@ def require_auth_for_everything():
         '/api/tenant-login',
         '/api/auth/refresh',
         '/api/auth/logout',
+        '/api/tenants',
         # Allow a few read-only endpoints used by head/includes and utils
         '/api/version',
         '/api/system-time',
@@ -393,21 +394,39 @@ def validate_pin():
     pin = data.get('pin', '')
     # Prefer parent PIN stored in the settings table when available.
     db_pin = None
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT setting_value FROM settings WHERE setting_key = %s", ('parent_pin',))
-        row = cur.fetchone()
-        if row and row.get('setting_value') is not None:
-            raw_val = str(row.get('setting_value'))
-            # Try decrypting stored value (new encrypted format). If decryption fails,
-            # fall back to raw numeric value for legacy installs.
-            try_decrypted = decrypt_password(raw_val)
-            if try_decrypted and try_decrypted.isdigit():
-                db_pin = try_decrypted
-            elif raw_val.isdigit():
-                db_pin = raw_val
-            else:
+        # Try tenant-scoped parent PIN first
+        if tenant_id:
+            try:
+                cur.execute("SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s", (tenant_id, 'parent_pin'))
+                row = cur.fetchone()
+                if row and row.get('setting_value') is not None:
+                    raw_val = str(row.get('setting_value'))
+                    try_decrypted = decrypt_password(raw_val)
+                    if try_decrypted and try_decrypted.isdigit():
+                        db_pin = try_decrypted
+                    elif raw_val.isdigit():
+                        db_pin = raw_val
+            except Exception:
+                # Continue to fallback to global setting or env var
+                db_pin = None
+
+        # If no tenant-scoped PIN, fall back to global settings table
+        if db_pin is None:
+            try:
+                cur.execute("SELECT setting_value FROM settings WHERE setting_key = %s", ('parent_pin',))
+                row = cur.fetchone()
+                if row and row.get('setting_value') is not None:
+                    raw_val = str(row.get('setting_value'))
+                    try_decrypted = decrypt_password(raw_val)
+                    if try_decrypted and try_decrypted.isdigit():
+                        db_pin = try_decrypted
+                    elif raw_val.isdigit():
+                        db_pin = raw_val
+            except Exception:
                 db_pin = None
     except Exception:
         # Don't fail validation if DB read fails; fall back to env var below
@@ -691,7 +710,7 @@ def api_create_tenant():
     `TENANT_CREATION_KEY` environment variable. If that env var is not set
     tenant-creation is disabled.
 
-    Expects JSON: { "tenant_name": "...", "password": "..." }
+    Expects JSON: { "tenant_name": "...", "password": "...", "parent_pin": "<4-digit>" }
     Returns: { "tenant_id": "<uuid>" }
     """
     # Management key must be configured in the environment
@@ -713,9 +732,18 @@ def api_create_tenant():
     data = request.get_json(force=True) or {}
     tenant_name = (data.get('tenant_name') or '').strip()
     password = data.get('password') or ''
+    parent_pin = (data.get('parent_pin') or '').strip()
 
-    if not tenant_name or not password:
-        return jsonify({'error': 'tenant_name and password are required'}), 400
+    # Disallow whitespace in tenant name (prevent spaces, tabs, etc.)
+    if any(ch.isspace() for ch in tenant_name):
+        return jsonify({'error': 'tenant_name must not contain spaces or whitespace characters'}), 400
+
+    if not tenant_name or not password or not parent_pin:
+        return jsonify({'error': 'tenant_name, password and parent_pin are required'}), 400
+
+    # parent_pin is required and must be exactly 4 digits
+    if not (len(parent_pin) == 4 and parent_pin.isdigit()):
+        return jsonify({'error': 'parent_pin must be exactly 4 digits'}), 400
 
     # Ensure Argon2 hasher is available
     if ph is None:
@@ -737,6 +765,24 @@ def api_create_tenant():
             (tenant_name, hashed)
         )
         tenant_id = cur.fetchone()[0]
+
+        # Encrypt and store the required parent PIN in the tenant-scoped settings table
+        try:
+            encrypted_pin = encrypt_password(parent_pin)
+            cur.execute('''
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, 'parent_pin', encrypted_pin))
+        except Exception:
+            # If storing the PIN fails, rollback and return an error
+            conn.rollback()
+            try:
+                log_system_event('tenant_create_error', 'Failed to store parent PIN during tenant creation', None, 'error')
+            except Exception:
+                pass
+            return jsonify({'error': 'Failed to store parent PIN'}), 500
+
         conn.commit()
 
         try:
@@ -2140,16 +2186,33 @@ def update_settings():
                 conn.close()
                 return jsonify({'error': 'Parent PIN must be exactly 4 digits or left empty to keep existing'}), 400
 
-            old_value = current_settings.get('parent_pin', '')
-            if pin_value != old_value:
-                changed_settings['parent_pin'] = {'old': '<set>' if old_value else '<not set>', 'new': '<changed>'}
+            # Determine tenant context. Parent PIN is tenant-scoped.
+            tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+            if not tenant_id:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Tenant context required to set parent PIN'}), 400
+
+            # Optionally fetch existing tenant-scoped PIN for logging
+            try:
+                cursor.execute("SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s", (tenant_id, 'parent_pin'))
+                existing = cursor.fetchone()
+            except Exception:
+                existing = None
+
+            old_value = existing.get('setting_value') if existing else ''
+            if old_value:
+                changed_settings['parent_pin'] = {'old': '<set>', 'new': '<changed>'}
+            else:
+                changed_settings['parent_pin'] = {'old': '<not set>', 'new': '<changed>'}
+
             # Encrypt the PIN before storing for security
             encrypted_pin = encrypt_password(pin_value)
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('parent_pin', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (encrypted_pin,))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, 'parent_pin', encrypted_pin))
     
     conn.commit()
     cursor.close()
