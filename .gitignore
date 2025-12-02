@@ -7,3 +7,5 @@ check_missing_classes.py
 check_unused_classes.py
 .github/copilot-instructions.md
 .env
+MIGRATION_PLAN.md
+scripts/run_init_db.ps1
