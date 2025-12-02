@@ -329,6 +329,62 @@ def create_default_admin_if_missing(cursor):
         ''', (tenant_id, 'parent_pin', encrypted_pin))
     except Exception as e:
         print(f'Failed to upsert parent_pin for Administrator tenant: {e}')
+    
+    # Drop foreign key constraints that reference the legacy tables, then drop the legacy tables themselves.
+    try:
+        legacy_tables = ['user', 'chores', 'settings', 'cash_balances', 'transactions', 'system_log']
+
+        for legacy in legacy_tables:
+            # Find foreign key constraints that reference this legacy table
+            cursor.execute("""
+                SELECT con.conname AS constraint_name,
+                       conrel.relname AS referencing_table
+                FROM pg_constraint con
+                JOIN pg_class confrel ON confrel.oid = con.confrelid
+                JOIN pg_class conrel ON conrel.oid = con.conrelid
+                WHERE con.contype = 'f' AND confrel.relname = %s
+            """, (legacy,))
+
+            fks = cursor.fetchall()
+            for constraint_name, referencing_table in fks:
+                try:
+                    cursor.execute(f'ALTER TABLE "{referencing_table}" DROP CONSTRAINT IF EXISTS "{constraint_name}" CASCADE')
+                except Exception as e:
+                    print(f'Warning: failed to drop constraint {constraint_name} on {referencing_table}: {e}')
+
+        # Also attempt to drop any explicit constraints defined on the legacy tables themselves
+        for legacy in legacy_tables:
+            try:
+                # Drop all constraints on the table (if present)
+                cursor.execute("""
+                    SELECT con.conname
+                    FROM pg_constraint con
+                    JOIN pg_class rel ON rel.oid = con.conrelid
+                    WHERE rel.relname = %s
+                """, (legacy,))
+                own_constraints = cursor.fetchall()
+                for (conname,) in own_constraints:
+                    try:
+                        cursor.execute(f'ALTER TABLE "{legacy}" DROP CONSTRAINT IF EXISTS "{conname}" CASCADE')
+                    except Exception as e:
+                        print(f'Warning: failed to drop own constraint {conname} on {legacy}: {e}')
+            except Exception:
+                # If table doesn't exist or query fails, continue
+                pass
+
+        # Finally, drop the legacy tables if they exist
+        for legacy in legacy_tables:
+            try:
+                # Quote "user" properly
+                if legacy == 'user':
+                    cursor.execute('DROP TABLE IF EXISTS "user" CASCADE')
+                else:
+                    cursor.execute(f'DROP TABLE IF EXISTS {legacy} CASCADE')
+            except Exception as e:
+                print(f'Warning: failed to drop table {legacy}: {e}')
+
+    except Exception as e:
+        print(f'Warning: error while removing legacy tables/constraints: {e}')
 
 
 def init_database():
