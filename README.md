@@ -93,6 +93,33 @@ The application will be available at `http://localhost:8000` (or at the specifie
 - `LOG_LEVEL` - Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`)
 - `ACCESS_TOKEN_EXPIRES` - Access token lifetime in seconds (default: `900` (15 minutes))
 - `REFRESH_TOKEN_EXPIRES` - Refresh token lifetime in seconds (default: `2592000` (30 days))
+- `TENANT_CREATION_KEY` - Management key used to protect the tenant-creation API (default: empty)
+	You can generate a secure key using Python. Example (recommended):
+### Create tenant helper script
+
+Use the included PowerShell helper to interactively create a tenant. The script reads `TENANT_CREATION_KEY` from the environment or from a top-level `.env` file.
+
+Interactive usage (recommended):
+
+```powershell
+.\scripts
+eate_tenant.ps1
+```
+
+Override the server URL (if different):
+
+```powershell
+.\scripts
+eate_tenant.ps1 -Url "http://localhost:8000"
+```
+
+Make sure `TENANT_CREATION_KEY` is set before running the script.
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+`secrets.token_urlsafe(48)` produces a URL-safe, high-entropy token (~64 characters).
 
 #### Volumes
 - `db_data`: PostgreSQL data directory

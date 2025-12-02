@@ -37,6 +37,9 @@ services:
       - POSTGRES_USER=family_chores
       - POSTGRES_PASSWORD=family_chores
       - PARENT_PIN=1234
+      # Management key to allow creating tenants via management API.
+      # If empty or unset tenant creation endpoint is disabled.
+      - TENANT_CREATION_KEY=
       # Valid timezone values: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
       - TZ=America/Denver
       # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)

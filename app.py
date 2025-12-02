@@ -651,6 +651,81 @@ def api_tenant_login():
     return resp, 200
 
 
+@app.route('/api/tenants', methods=['POST'])
+def api_create_tenant():
+    """Create a new tenant (management API).
+
+    Protection: requires header `X-Tenant-Creation-Key` to match the
+    `TENANT_CREATION_KEY` environment variable. If that env var is not set
+    tenant-creation is disabled.
+
+    Expects JSON: { "tenant_name": "...", "password": "..." }
+    Returns: { "tenant_id": "<uuid>" }
+    """
+    # Management key must be configured in the environment
+    mgmt_key = os.environ.get('TENANT_CREATION_KEY')
+    if not mgmt_key:
+        return jsonify({'error': 'Tenant creation is disabled on this server'}), 403
+
+    provided = request.headers.get('X-Tenant-Creation-Key')
+    if not provided or provided != mgmt_key:
+        try:
+            log_system_event('tenant_create_forbidden', 'Attempt to create tenant without valid management key', None, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': 'Forbidden'}), 403
+
+    # Parse JSON body
+    if not request.is_json:
+        return jsonify({'error': 'Expected JSON body'}), 400
+    data = request.get_json(force=True) or {}
+    tenant_name = (data.get('tenant_name') or '').strip()
+    password = data.get('password') or ''
+
+    if not tenant_name or not password:
+        return jsonify({'error': 'tenant_name and password are required'}), 400
+
+    # Ensure Argon2 hasher is available
+    if ph is None:
+        return jsonify({'error': 'Server misconfigured: password hasher unavailable'}), 500
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Prevent duplicate tenant names (case-insensitive)
+        cur.execute("SELECT tenant_id FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (tenant_name,))
+        if cur.fetchone():
+            return jsonify({'error': 'Tenant with that name already exists'}), 400
+
+        # Hash password with Argon2
+        hashed = ph.hash(password)
+
+        cur.execute(
+            "INSERT INTO tenants (tenant_name, tenant_password) VALUES (%s, %s) RETURNING tenant_id",
+            (tenant_name, hashed)
+        )
+        tenant_id = cur.fetchone()[0]
+        conn.commit()
+
+        try:
+            log_system_event('tenant_created', f'Tenant created: {tenant_name}', {'tenant_id': str(tenant_id)}, 'success')
+        except Exception:
+            pass
+
+        return jsonify({'tenant_id': str(tenant_id)}), 201
+    except Exception as e:
+        error_msg = str(e)
+        conn.rollback()
+        try:
+            log_system_event('tenant_create_error', f'Error creating tenant: {error_msg}', None, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': f'Error creating tenant: {error_msg}'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.route('/api/auth-check', methods=['GET'])
 def api_auth_check():
     """Validate current authentication state.
