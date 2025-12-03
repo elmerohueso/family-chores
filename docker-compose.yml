@@ -36,10 +36,11 @@ services:
       - POSTGRES_DATABASE=family_chores
       - POSTGRES_USER=family_chores
       - POSTGRES_PASSWORD=family_chores
-      - PARENT_PIN=${PIN_VALUE}
+      # Username and password for the initial tenant
       - ADMIN_NAME=${ADMIN_NAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - PIN_VALUE=${PIN_VALUE}
+      # Parent PIN for the initial tenant
+      - PARENT_PIN=${PARENT_PIN}
       # Management key to allow creating tenants via management API.
       # If empty or unset tenant creation endpoint is disabled.
       - TENANT_CREATION_KEY=${TENANT_CREATION_KEY}

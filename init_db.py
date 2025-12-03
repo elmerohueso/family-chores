@@ -329,8 +329,8 @@ def create_default_admin_if_missing(cursor):
         pass
 
     encrypted_pin = None
-    # Parent PIN can be provided via env var `PIN_VALUE`; default kept for dev convenience
-    pin_value = os.environ.get('PIN_VALUE', '1234')
+    # Parent PIN can be provided via env var `PARENT_PIN`; default kept for dev convenience
+    pin_value = os.environ.get('PARENT_PIN', '1234')
     if _fernet_available:
         try:
             secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
