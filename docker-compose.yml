@@ -23,6 +23,7 @@ services:
   familychores-app:
     container_name: familychores-app
     image: ghcr.io/elmerohueso/family-chores:latest
+    env_file: .env
     ports:
       - 8000:8000
     volumes:
@@ -35,7 +36,10 @@ services:
       - POSTGRES_DATABASE=family_chores
       - POSTGRES_USER=family_chores
       - POSTGRES_PASSWORD=family_chores
-      - PARENT_PIN=1234
+      - PARENT_PIN=${PIN_VALUE}
+      - ADMIN_NAME=${ADMIN_NAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - PIN_VALUE=${PIN_VALUE}
       # Management key to allow creating tenants via management API.
       # If empty or unset tenant creation endpoint is disabled.
       - TENANT_CREATION_KEY=${TENANT_CREATION_KEY}

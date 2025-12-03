@@ -189,8 +189,10 @@ def create_default_admin_if_missing(cursor):
     If Argon2 is not available, this function will skip creating the default tenant and
     print a warning.
     """
-    admin_name = 'Administrator'
-    admin_password = 'ChangeMe!'
+    # Allow the default admin credentials to be configured via environment variables
+    # (recommended: set these in your .env file or container environment).
+    admin_name = os.environ.get('ADMIN_NAME', 'Administrator')
+    admin_password = os.environ.get('ADMIN_PASSWORD', 'ChangeMe!')
     if _ph is None:
         print('Warning: argon2 PasswordHasher not available; skipping default tenant creation')
         return
@@ -326,7 +328,8 @@ def create_default_admin_if_missing(cursor):
         pass
 
     encrypted_pin = None
-    pin_value = '1234'
+    # Parent PIN can be provided via env var `PIN_VALUE`; default kept for dev convenience
+    pin_value = os.environ.get('PIN_VALUE', '1234')
     if _fernet_available:
         try:
             secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
