@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Withdraw Cash - Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+    {% include '_head_includes.html' %}
 </head>
 <body>
     <div class="container container-sm">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link">← Home</a>
+                <a href="/dashboard" class="nav-link">← Dashboard</a>
             </div>
             <h1>💵 Withdraw Cash</h1>
         </header>

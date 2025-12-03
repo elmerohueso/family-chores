@@ -3,19 +3,75 @@
  * Shared JavaScript utilities for URL management and user pre-selection
  */
 /**
- * Get current user role from localStorage
- * @returns {string|null} 'parent', 'kid', or null if not set
+ * In-memory current user role.
+ * We intentionally do NOT persist the role to localStorage for security
+ * and freshness — the server session is authoritative.
+ * Possible values: 'parent', 'kid', or null.
+ */
+// Initialize from server-injected role when available. The templates inject
+// `window.__serverRole` before this script is loaded so we can synchronously
+// pick it up here. Do not persist to localStorage — server session is
+// authoritative.
+let currentUserRole = (typeof window !== 'undefined' && window.__serverRole && (window.__serverRole === 'kid' || window.__serverRole === 'parent')) ? window.__serverRole : null;
+
+/**
+ * Get current user role (from memory).
+ * Synchronous so templates and inline scripts can call `getRole()`.
+ * @returns {string|null}
  */
 function getRole() {
-    return localStorage.getItem('userRole');
+    return currentUserRole;
 }
 
 /**
- * Set current user role in localStorage
- * @param {string} role - 'parent' or 'kid'
+ * Set current user role in memory only (do NOT persist to localStorage).
+ * @param {string|null} role - 'parent', 'kid', or null to clear
  */
 function setLocalRole(role) {
-    localStorage.setItem('userRole', role);
+    if (role === 'kid' || role === 'parent') {
+        currentUserRole = role;
+    } else {
+        currentUserRole = null;
+    }
+}
+
+/**
+ * Check server session role on page load and redirect if unauthorized.
+ * Uses only the server response and updates the in-memory role.
+ */
+async function checkRoleOnLoad() {
+    try {
+        const resp = await fetch('/api/get-role');
+        if (!resp.ok) {
+            console.warn('Failed to fetch role:', resp.status);
+            return;
+        }
+
+        const data = await resp.json();
+        const role = data && data.role ? data.role : null;
+
+        // Keep server-authoritative role in memory only
+        if (role === 'kid' || role === 'parent') {
+            setLocalRole(role);
+            return;
+        }
+
+        // Server reports no role — clear in-memory role and redirect off protected pages
+        setLocalRole(null);
+        const pathname = window.location.pathname || '/';
+        if (pathname !== '/dashboard' && pathname !== '/') {
+            window.location.replace('/dashboard');
+        }
+    } catch (err) {
+        console.error('Error checking role on load:', err);
+    }
+}
+
+// Run role check after DOM is ready
+if (document && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', () => {
+        checkRoleOnLoad();
+    });
 }
 
 
@@ -58,14 +114,7 @@ function getUrlParameter(name) {
     return urlParams.get(name);
 }
 
-/**
- * Clean URL by replacing current state with base URL
- * This removes query parameters from the address bar while preserving page state
- */
-function cleanUrl() {
-    const baseUrl = '/';
-    window.history.replaceState({}, '', baseUrl);
-}
+
 
 /**
  * Pre-select user in dropdown and trigger change event
@@ -83,8 +132,7 @@ function preSelectUserFromUrl(selectId) {
             const changeEvent = new Event('change');
             userSelect.dispatchEvent(changeEvent);
         }
-        // Clean URL after pre-selecting
-        cleanUrl();
+        
         return userIdParam;
     }
     return null;
@@ -111,12 +159,16 @@ function getUserFilterFromUrl() {
  */
 async function getPermissions() {
     try {
-        const settings = await getSettings();
+        const resp = await fetch('/api/kid-permissions');
+        if (!resp.ok) {
+            throw new Error(`Failed to load kid permissions: ${resp.status}`);
+        }
+        const settings = await resp.json();
         const perms = {
-            record_chore: settings.kid_allowed_record_chore || false,
-            redeem_points: settings.kid_allowed_redeem_points || false,
-            withdraw_cash: settings.kid_allowed_withdraw_cash || false,
-            view_history: settings.kid_allowed_view_history || false
+            record_chore: !!settings.kid_allowed_record_chore,
+            redeem_points: !!settings.kid_allowed_redeem_points,
+            withdraw_cash: !!settings.kid_allowed_withdraw_cash,
+            view_history: !!settings.kid_allowed_view_history
         };
         return perms;
     } catch (error) {
@@ -155,12 +207,42 @@ async function getSettings() {
  */
 async function updateSettings(settingsData) {
     try {
+        // If settingsData contains kid permission keys, send them to the
+        // dedicated endpoint first (parent-only). Remove them from the
+        // payload sent to /api/settings to avoid duplication.
+        const permKeys = ['kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history'];
+        const permPayload = {};
+        const settingsPayload = Object.assign({}, settingsData);
+
+        for (const k of permKeys) {
+            if (k in settingsPayload) {
+                permPayload[k] = settingsPayload[k];
+                delete settingsPayload[k];
+            }
+        }
+
+        // If there are permission changes, call the kid-permissions endpoint
+        if (Object.keys(permPayload).length > 0) {
+            const permResp = await fetch('/api/kid-permissions', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(permPayload)
+            });
+
+            if (!permResp.ok) {
+                // Return a Response-like error so callers can handle uniformly
+                const errText = await permResp.text().catch(() => 'Failed to update kid permissions');
+                return new Response(JSON.stringify({ error: errText }), { status: permResp.status || 500, headers: { 'Content-Type': 'application/json' } });
+            }
+        }
+
+        // Send remaining settings to the main settings endpoint
         const response = await fetch('/api/settings', {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(settingsData)
+            body: JSON.stringify(settingsPayload)
         });
         return response;
     } catch (error) {
@@ -306,26 +388,51 @@ async function getTransactions() {
 }
 
 /**
- * Create a new transaction (chore completion or point redemption)
- * @param {Object} transactionData - Transaction data object
- * @param {number} transactionData.user_id - User ID
- * @param {number|null} transactionData.chore_id - Chore ID (null for redemptions)
- * @param {number} transactionData.value - Point value (negative for redemptions)
- * @param {string} [transactionData.redemption_type] - Type of redemption (optional)
- * @returns {Promise<Response>} Fetch response object
+ * Record a chore completion (permission-protected endpoint).
+ * @param {Object} data - { user_id, chore_id, value }
+ * @returns {Promise<Response>} Fetch response
  */
-async function createTransaction(transactionData) {
+async function recordChore(data) {
     try {
-        const response = await fetch('/api/transactions', {
+        const payload = {
+            user_id: data.user_id,
+            chore_id: data.chore_id ?? null,
+            points: data.value ?? data.points ?? 0
+        };
+
+        const response = await fetch('/api/record-chore', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(transactionData)
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
         return response;
     } catch (error) {
-        console.error('Error creating transaction:', error);
+        console.error('Error recording chore:', error);
+        throw error;
+    }
+}
+
+/**
+ * Redeem points (permission-protected endpoint).
+ * @param {Object} data - { user_id, points, redemption_type? }
+ * @returns {Promise<Response>} Fetch response
+ */
+async function redeemPoints(data) {
+    try {
+        const payload = {
+            user_id: data.user_id,
+            points: data.points ?? Math.abs(data.value ?? 0)
+        };
+        if (data.redemption_type) payload.redemption_type = data.redemption_type;
+
+        const response = await fetch('/api/redeem-points', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error redeeming points:', error);
         throw error;
     }
 }
@@ -431,9 +538,11 @@ async function setServerRole(role) {
 }
 
 /**
- * Logout the current user (clears role and reloads page)
+ * roleLogout: clear the current session role and reload the page
+ * Clears role on server (best-effort), clears the client in-memory role,
+ * then reloads the page so the role selection overlay is shown.
  */
-async function logout() {
+async function roleLogout() {
     try {
         // Clear role on server (ignore response outcome for now)
         await setServerRole('');
@@ -442,8 +551,47 @@ async function logout() {
     }
     // Clear local stored role so page load shows selection overlay
     setLocalRole('');
-    // Reload the page to show role selection again
-    window.location.reload();
+    // Navigate to the requested dashboard path so the role selection UI is shown
+    // Use replace to avoid adding an extra history entry
+    window.location.replace('/dashboard');
+}
+
+/**
+ * Tenant logout: clears tenant session on server and redirects to the index/login page.
+ * Calls `/api/auth/logout` (server will clear refresh cookie) and then clears any
+ * client-side stored tenant tokens before redirecting to `/`.
+ */
+async function tenantLogout() {
+    // Immediately clear any locally stored tokens and in-memory role so UI updates
+    try {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('tenant_name');
+        localStorage.removeItem('userRole');
+        // Also clear legacy/login token used by the tenant UI
+        localStorage.removeItem('fc_token');
+    } catch (e) {}
+
+    try {
+        // Clear in-memory role used by client UI
+        if (typeof setLocalRole === 'function') setLocalRole('');
+    } catch (e) {}
+
+    // Tell the server to revoke the refresh token and clear tenant cookie
+    try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+        console.error('Error calling tenant logout endpoint:', err);
+    }
+
+    // Also clear the server-side session role to keep UI and server in sync
+    try {
+        await setServerRole('');
+    } catch (err) {
+        console.error('Error clearing server role via /api/set-role:', err);
+    }
+
+    // Redirect to the root (tenant/login) page
+    window.location.href = '/';
 }
 
 /**
@@ -820,5 +968,49 @@ function syncScroll(source, topScrollId, bottomScrollId) {
         bottom.scrollLeft = top.scrollLeft;
     } else {
         top.scrollLeft = bottom.scrollLeft;
+    }
+}
+
+/**
+ * Change the authenticated tenant password.
+ * @param {string} currentPassword - Current password
+ * @param {string} newPassword - New password
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function resetTenantPassword(currentPassword, newPassword) {
+    try {
+        const response = await fetch('/api/tenant/password', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+        });
+        return response;
+    } catch (error) {
+        console.error('Error resetting tenant password:', error);
+        throw error;
+    }
+}
+
+
+/**
+ * Fetch server timezone information from `/api/tz-info`.
+ * Returns an object { tz_offset_min, tz_name, timestamp } or null on error.
+ * @returns {Promise<{tz_offset_min:number,tz_name:string,timestamp:string}|null>}
+ */
+async function getServerTzInfo() {
+    try {
+        const resp = await fetch('/api/tz-info', { credentials: 'same-origin' });
+        if (!resp.ok) {
+            console.warn('getServerTzInfo failed:', resp.status);
+            return null;
+        }
+        const data = await resp.json();
+        return data;
+    } catch (err) {
+        console.error('Error fetching tz info:', err);
+        return null;
     }
 }

@@ -89,9 +89,40 @@ The application will be available at `http://localhost:8000` (or at the specifie
 - `POSTGRES_USER` - Database user (default: `family_chores`)
 - `POSTGRES_PASSWORD` - Database password (default: `family_chores`)
 - `PARENT_PIN` - PIN required for Parent login (default: `1234`)
+- `PARENT_PIN` - PIN required for Parent login (default: `1234`). The application now prefers an encrypted `parent_pin` value stored in the `settings` table (if present) and will fall back to this environment variable only when no DB value exists or a DB read fails. Use the Settings page to update the Parent PIN (enter exactly 4 digits or leave empty to keep the existing value). Stored PINs are encrypted in the database for security.
 - `TZ` - Set to your local timezone (default: `America/Denver`)
 - `LOG_LEVEL` - Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`)
+- `ACCESS_TOKEN_EXPIRES` - Access token lifetime in seconds (default: `900` (15 minutes))
+- `REFRESH_TOKEN_EXPIRES` - Refresh token lifetime in seconds (default: `2592000` (30 days))
+- `TENANT_CREATION_KEY` - Management key used to protect the tenant-creation API (default: empty)
+	You can generate a secure key using Python. Example (recommended):
+### Create tenant helper script
+
+Use the included PowerShell helper to interactively create a tenant. The script reads `TENANT_CREATION_KEY` from the environment or from a top-level `.env` file.
+
+Interactive usage (recommended):
+
+```powershell
+.\scripts
+eate_tenant.ps1
+```
+
+Override the server URL (if different):
+
+```powershell
+.\scripts
+eate_tenant.ps1 -Url "http://localhost:8000"
+```
+
+Make sure `TENANT_CREATION_KEY` is set before running the script.
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+`secrets.token_urlsafe(48)` produces a URL-safe, high-entropy token (~64 characters).
 
 #### Volumes
 - `db_data`: PostgreSQL data directory
 - `avatar_data`: User avatar images
+- `backup_data`: Database backups

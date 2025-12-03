@@ -23,10 +23,12 @@ services:
   familychores-app:
     container_name: familychores-app
     image: ghcr.io/elmerohueso/family-chores:latest
+    env_file: .env
     ports:
       - 8000:8000
     volumes:
       - avatar_data:/data/avatars
+      - backup_data:/data/backups
     environment:
       - FLASK_ENV=development
       - SECRET_KEY=dev-secret-key-change-in-production
@@ -34,11 +36,22 @@ services:
       - POSTGRES_DATABASE=family_chores
       - POSTGRES_USER=family_chores
       - POSTGRES_PASSWORD=family_chores
-      - PARENT_PIN=1234
+      - PARENT_PIN=${PIN_VALUE}
+      - ADMIN_NAME=${ADMIN_NAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - PIN_VALUE=${PIN_VALUE}
+      # Management key to allow creating tenants via management API.
+      # If empty or unset tenant creation endpoint is disabled.
+      - TENANT_CREATION_KEY=${TENANT_CREATION_KEY}
       # Valid timezone values: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
       - TZ=America/Denver
       # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
       - LOG_LEVEL=INFO
+      # Token lifetimes (seconds): adjust for your security and UX needs
+      # ACCESS_TOKEN_EXPIRES: access token lifetime in seconds (default: 900 = 15 minutes)
+      - ACCESS_TOKEN_EXPIRES=900
+      # REFRESH_TOKEN_EXPIRES: refresh token lifetime in seconds (default: 2592000 = 30 days)
+      - REFRESH_TOKEN_EXPIRES=2592000
     networks:
       - familychores-network
     depends_on:
@@ -52,3 +65,4 @@ networks:
 volumes:
   db_data:
   avatar_data:
+  backup_data:

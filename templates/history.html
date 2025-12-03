@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>History - Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+    {% include '_head_includes.html' %}
 </head>
 <body>
     <div class="container">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link">← Home</a>
+                <a href="/dashboard" class="nav-link">← Dashboard</a>
                 <button id="exportHistoryCsvBtn" class="btn-logout" style="display:none;">Export CSV</button>
             </div>
             <h1>💰 Activity History</h1>
@@ -332,10 +331,6 @@
             try {
                 // Check for user_id filter in URL
                 filterUserId = getUserFilterFromUrl();
-                // Clean URL after capturing filter
-                if (filterUserId) {
-                    cleanUrl();
-                }
 
                 allTransactions = await getTransactions();
 

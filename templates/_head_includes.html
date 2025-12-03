@@ -1,0 +1,3 @@
+<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+<script>window.__serverRole = "{{ session.get('user_role') or '' }}";</script>
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>

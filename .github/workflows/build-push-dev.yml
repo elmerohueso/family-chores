@@ -1,0 +1,30 @@
+name: Build and push Docker image for Dev Branch
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths-ignore:
+      - ".github/**"
+      - ".gitignore"
+      - ".gitattributes"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "docker-compose-dev.yml"
+      - "README.md"
+      - "USER_GUIDE.md"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: authenticate
+        run: |
+          echo ${{secrets.CR_PAT}} | docker login ghcr.io -u elmerohueso --password-stdin
+      - name: build image
+        run: |
+          docker buildx create --name multiarch-builder --use --bootstrap
+          docker buildx build --platform linux/amd64,linux/arm64 --tag ghcr.io/elmerohueso/family-chores:dev --push .

@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+    {% include '_head_includes.html' %}
 </head>
 <body>
     <div class="container">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link">← Home</a>
+                <a href="/dashboard" class="nav-link">← Dashboard</a>
             </div>
             <h1>⚙️ Settings</h1>
         </header>
@@ -25,6 +24,17 @@
                 <form id="settingsForm">
                     <div class="setting-item">
                         <div class="setting-label">
+                            <span class="text-title-sm">Parent PIN</span>
+                        </div>
+                        <div class="text-body">
+                            4-digit PIN used for parent login. Leave empty to keep existing.
+                        </div>
+                        <div class="input-group" style="margin-top: 12px;">
+                            <input type="tel" id="parentPin" class="form-input" minlength="4" maxlength="4" pattern="\d{4}" title="Enter exactly 4 digits (leave empty to keep existing)" inputmode="numeric" style="width: 140px;">
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">
                             <span class="text-title-sm">Automatic Daily Cash Out</span>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="automaticDailyCashOut">
@@ -32,12 +42,15 @@
                             </label>
                         </div>
                         <div class="text-body">
-                            When enabled, excess points (above Max Rollover Points) are automatically converted to cash at the configured time at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
-                        </div>
-                        <div class="input-group" style="margin-top: 12px;">
-                            <label for="dailyCashOutTime" class="setting-name">Cash Out Time:</label>
-                            <input type="time" id="dailyCashOutTime" class="form-input" required style="width: 180px;">
-                            <span style="color: #666; margin-left: 8px;">(if automatic cash out has already run today, changing this time will not take effect until tomorrow)</span>
+                            <div class="text-body">
+                                When enabled, excess points (above Max Rollover Points) are automatically converted to cash at midnight at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
+
+                                <div style="margin-top:8px; color:#444;">
+                                    Timezone used for scheduled daily cash-out:
+                                    <strong id="tzDisplay">Loading timezone...</strong>
+                                    <!-- TZ loader script moved to the main <script> block at the bottom of the page -->
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -315,10 +328,18 @@
 
                 <div class="reset-section">
                     <div class="text-title-sm">DANGER ZONE!</div>
-                    <div class="reset-buttons">
-                        <button class="btn btn-red-on-white" onclick="confirmResetPoints()">Reset All Points Balances</button>
-                        <button class="btn btn-red-on-white" onclick="confirmResetCash()">Reset All Cash Balances</button>
-                        <button class="btn btn-red-on-white" onclick="confirmResetTransactions()">Reset All Historical Data</button>
+                        <div class="reset-buttons">
+                            <button class="btn btn-red-on-white" onclick="confirmResetPoints()">Reset All Points</button>
+                            <button class="btn btn-red-on-white" onclick="confirmResetCash()">Reset All Cash</button>
+                            <button class="btn btn-red-on-white" onclick="confirmResetTransactions()">Reset Historical Data</button>
+                        </div>
+                        <!-- Vertical gap between reset button groups -->
+                        <div class="mb-3" aria-hidden="true"></div>
+                        <div class="reset-buttons">
+                            <button class="btn btn-red-on-white" onclick="resetPassword()">Reset Password</button>
+                            <button class="btn btn-red-on-white" onclick="confirmSignOut()">Sign Out</button>
+                        </div>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -333,6 +354,32 @@
                     <button class="btn btn-red-on-white btn-md" id="confirmBtn" onclick="executeReset()">Confirm</button>
                     <button class="btn btn-gray-on-cream btn-md" onclick="closeConfirmation()">Cancel</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Password Reset Dialog -->
+        <div id="passwordResetDialog" class="overlay">
+            <div class="overlay-content" style="max-width:480px;">
+                <div class="text-title">Reset Password</div>
+                <div style="margin-top:16px;">
+                    <div class="input-group" style="margin-bottom:20px;">
+                        <label class="label-form">Current password</label>
+                        <input type="password" id="currentPasswordInput" class="form-input">
+                    </div>
+                    <div class="input-group" style="margin-bottom:20px;">
+                        <label class="label-form">New password</label>
+                        <input type="password" id="newPasswordInput" class="form-input">
+                    </div>
+                    <div class="input-group" style="margin-bottom:20px;">
+                        <label class="label-form" style="margin-bottom:20px;">Confirm new password</label>
+                        <input type="password" id="confirmNewPasswordInput" class="form-input">
+                    </div>
+                </div>
+                <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end;">
+                    <button class="btn btn-gray-on-cream btn-md" onclick="closePasswordResetDialog()">Cancel</button>
+                    <button class="btn btn-white-on-purple btn-md" id="passwordResetSubmitBtn" onclick="submitPasswordReset()">Reset Password</button>
+                </div>
+                <div id="passwordResetMessage" class="system-message" style="margin-top:12px;"></div>
             </div>
         </div>
 
@@ -352,23 +399,32 @@
                 const settings = await getSettings();
 
                 document.getElementById('automaticDailyCashOut').checked = settings.automatic_daily_cash_out;
-                // Set cash out time (format: HH:MM, convert to time input format)
-                const cashOutTime = settings.daily_cash_out_time || '00:00';
-                document.getElementById('dailyCashOutTime').value = cashOutTime;
                 document.getElementById('maxRolloverPoints').value = settings.max_rollover_points;
                 document.getElementById('dailyCooldownHours').value = settings.daily_cooldown_hours || 12;
                 document.getElementById('weeklyCooldownDays').value = settings.weekly_cooldown_days || 4;
                 document.getElementById('monthlyCooldownDays').value = settings.monthly_cooldown_days || 14;
-                document.getElementById('kidAllowedRecordChore').checked = settings.kid_allowed_record_chore || false;
-                document.getElementById('kidAllowedRedeemPoints').checked = settings.kid_allowed_redeem_points || false;
-                document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
-                document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
+                // Fetch kid permissions from the dedicated endpoint (may come from roles table)
+                try {
+                    const perms = await getPermissions();
+                    document.getElementById('kidAllowedRecordChore').checked = perms.record_chore || false;
+                    document.getElementById('kidAllowedRedeemPoints').checked = perms.redeem_points || false;
+                    document.getElementById('kidAllowedWithdrawCash').checked = perms.withdraw_cash || false;
+                    document.getElementById('kidAllowedViewHistory').checked = perms.view_history || false;
+                } catch (e) {
+                    // Fall back to settings values if permissions fetch fails
+                    document.getElementById('kidAllowedRecordChore').checked = settings.kid_allowed_record_chore || false;
+                    document.getElementById('kidAllowedRedeemPoints').checked = settings.kid_allowed_redeem_points || false;
+                    document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
+                    document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
+                }
                 
                 // Email settings
                 document.getElementById('emailSmtpServer').value = settings.email_smtp_server || '';
                 document.getElementById('emailSmtpPort').value = settings.email_smtp_port || '587';
                 document.getElementById('emailUsername').value = settings.email_username || '';
                 document.getElementById('emailPassword').value = ''; // Don't populate password field
+                // Parent PIN: never populate the current PIN for security; leave empty to keep existing
+                document.getElementById('parentPin').value = '';
                 document.getElementById('emailSenderName').value = settings.email_sender_name || 'Family Chores';
                 document.getElementById('emailNotifyChoreCompleted').checked = settings.email_notify_chore_completed || false;
                 document.getElementById('emailNotifyPointsRedeemed').checked = settings.email_notify_points_redeemed || false;
@@ -392,7 +448,6 @@
 
             const data = {
                 automatic_daily_cash_out: document.getElementById('automaticDailyCashOut').checked,
-                daily_cash_out_time: document.getElementById('dailyCashOutTime').value,
                 max_rollover_points: parseInt(document.getElementById('maxRolloverPoints').value),
                 daily_cooldown_hours: parseInt(document.getElementById('dailyCooldownHours').value),
                 weekly_cooldown_days: parseInt(document.getElementById('weeklyCooldownDays').value),
@@ -405,6 +460,7 @@
                 email_smtp_port: document.getElementById('emailSmtpPort').value.trim(),
                 email_username: document.getElementById('emailUsername').value.trim(),
                 email_password: document.getElementById('emailPassword').value.trim(), // Only update if provided
+                parent_pin: document.getElementById('parentPin').value.trim(),
                 email_sender_name: document.getElementById('emailSenderName').value.trim(),
                 email_notify_chore_completed: document.getElementById('emailNotifyChoreCompleted').checked,
                 email_notify_points_redeemed: document.getElementById('emailNotifyPointsRedeemed').checked,
@@ -433,12 +489,24 @@
                 return;
             }
 
+            // Validate parent PIN client-side: allow empty or exactly 4 digits
+            if (data.parent_pin) {
+                const pinRegex = /^\d{4}$/;
+                if (!pinRegex.test(data.parent_pin)) {
+                    showMessage('Parent PIN must be exactly 4 digits or left empty to keep existing', true);
+                    return;
+                }
+            }
+
             try {
                 const response = await updateSettings(data);
                 const result = await response.json();
 
                 if (response.ok) {
                     showToast('Settings saved successfully!');
+                    // Clear sensitive inputs after a successful save
+                    const parentPinEl = document.getElementById('parentPin');
+                    if (parentPinEl) parentPinEl.value = '';
                 } else {
                     showToast(result.error || 'Error saving settings', true);
                 }
@@ -451,6 +519,7 @@
         let pendingResetType = null;
         let pendingDeleteChoreId = null;
         let pendingDeleteUserId = null;
+        let pendingSignOut = false;
 
         function confirmDeleteChore(choreId, choreName) {
             pendingDeleteChoreId = choreId;
@@ -487,11 +556,82 @@
             document.getElementById('confirmationDialog').classList.add('show');
         }
 
+        function confirmSignOut() {
+            pendingSignOut = true;
+            document.getElementById('confirmTitle').textContent = 'Sign Out';
+            document.getElementById('confirmMessage').textContent = 'Are you sure you want to completely sign out of Family Chores? This will end your session and return to the login page.';
+            document.getElementById('confirmationDialog').classList.add('show');
+        }
+
         function closeConfirmation() {
             document.getElementById('confirmationDialog').classList.remove('show');
             pendingResetType = null;
             pendingDeleteChoreId = null;
             pendingDeleteUserId = null;
+            pendingSignOut = false;
+        }
+
+        // Password reset UI
+        function resetPassword() {
+            // Clear inputs and show modal
+            document.getElementById('currentPasswordInput').value = '';
+            document.getElementById('newPasswordInput').value = '';
+            document.getElementById('confirmNewPasswordInput').value = '';
+            document.getElementById('passwordResetMessage').textContent = '';
+            document.getElementById('passwordResetDialog').classList.add('show');
+        }
+
+        function closePasswordResetDialog() {
+            const dlg = document.getElementById('passwordResetDialog');
+            if (dlg) dlg.style.display = 'none';
+        }
+
+        async function submitPasswordReset() {
+            const current = document.getElementById('currentPasswordInput').value || '';
+            const nw = document.getElementById('newPasswordInput').value || '';
+            const confirm = document.getElementById('confirmNewPasswordInput').value || '';
+            const msgEl = document.getElementById('passwordResetMessage');
+
+            msgEl.textContent = '';
+
+            if (!nw) { msgEl.textContent = 'New password is required'; return; }
+            if (nw !== confirm) { msgEl.textContent = 'New passwords do not match'; return; }
+
+            // Disable submit while request in flight
+            const btn = document.getElementById('passwordResetSubmitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Resetting...';
+
+            try {
+                // Use the shared helper in static/js/utils.js
+                const resp = await resetTenantPassword(current, nw);
+                const data = await (resp.json().catch(() => ({})));
+
+                if (resp.ok) {
+                    showToast('Password changed successfully');
+                    closePasswordResetDialog();
+
+                    // Backend revokes refresh tokens and clears cookies; ensure client fully signs out
+                    setTimeout(async () => {
+                        try {
+                            await tenantLogout();
+                        } catch (err) {
+                            // Fallback: navigate to root
+                            window.location.href = '/';
+                        }
+                    }, 700);
+                } else {
+                    showToast(data.error || 'Error changing password', true);
+                    msgEl.textContent = data.error || 'Error changing password';
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('Network error while changing password', true);
+                msgEl.textContent = 'Network error';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Reset Password';
+            }
         }
 
         async function executeReset() {
@@ -543,6 +683,19 @@
 
             // Handle reset operations
             if (!pendingResetType) {
+                // If no reset type, check for sign out
+                if (pendingSignOut) {
+                    closeConfirmation();
+                    try {
+                        // Call tenantLogout from utils.js to clear session and redirect
+                        await tenantLogout();
+                    } catch (err) {
+                        console.error('Error during sign out:', err);
+                        // Ensure dialog closed even on error
+                        closeConfirmation();
+                    }
+                    return;
+                }
                 closeConfirmation();
                 return;
             }
@@ -1241,9 +1394,6 @@
 
         // Check role on page load - redirect kids
         window.addEventListener('DOMContentLoaded', async () => {
-            // Clean URL to show base path only
-            cleanUrl();
-            
             try {
                 const role = getRole();
                 
@@ -1261,6 +1411,37 @@
 
         // Load footer on page load
         loadAppFooter();
+
+        // Populate timezone display using shared helper in static/js/utils.js
+        async function loadTzDisplay() {
+            try {
+                const info = await getServerTzInfo();
+                const el = document.getElementById('tzDisplay');
+                if (!el) return;
+                if (!info) {
+                    el.textContent = 'Unavailable';
+                    return;
+                }
+
+                // tz_offset_min is minutes east of UTC (negative = west)
+                const offsetMin = Number(info.tz_offset_min) || 0;
+                const absMin = Math.abs(offsetMin);
+                const hrs = Math.trunc(absMin / 60);
+                const mins = absMin % 60;
+                const sign = offsetMin <= 0 ? '-' : '+'; // negative means west (UTC-...)
+                const offsetStr = `UTC${sign}${hrs}${mins ? ':' + String(mins).padStart(2, '0') : ''}`;
+                const name = info.tz_name || '';
+
+                el.textContent = name ? `${name} (${offsetStr})` : offsetStr;
+            } catch (err) {
+                console.error('Error loading TZ info:', err);
+                const el = document.getElementById('tzDisplay');
+                if (el) el.textContent = 'Unavailable';
+            }
+        }
+
+        // Call it now so the timezone appears on the settings page
+        loadTzDisplay();
 
         // Send test email
         async function handleSendTestEmail() {
