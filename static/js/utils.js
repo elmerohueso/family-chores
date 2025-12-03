@@ -993,3 +993,24 @@ async function resetTenantPassword(currentPassword, newPassword) {
         throw error;
     }
 }
+
+
+/**
+ * Fetch server timezone information from `/api/tz-info`.
+ * Returns an object { tz_offset_min, tz_name, timestamp } or null on error.
+ * @returns {Promise<{tz_offset_min:number,tz_name:string,timestamp:string}|null>}
+ */
+async function getServerTzInfo() {
+    try {
+        const resp = await fetch('/api/tz-info', { credentials: 'same-origin' });
+        if (!resp.ok) {
+            console.warn('getServerTzInfo failed:', resp.status);
+            return null;
+        }
+        const data = await resp.json();
+        return data;
+    } catch (err) {
+        console.error('Error fetching tz info:', err);
+        return null;
+    }
+}

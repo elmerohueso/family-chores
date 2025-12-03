@@ -348,6 +348,7 @@ def require_auth_for_everything():
         # Allow a few read-only endpoints used by head/includes and utils
         '/api/version',
         '/api/system-time',
+        '/api/tz-info',
         '/api/get-role',
     ])
 
@@ -960,6 +961,36 @@ def get_system_time():
         'second': now.second,
         'timestamp': iso_timestamp,
         'unix_ms': int(now_aware.timestamp() * 1000)  # Unix timestamp in milliseconds
+    }), 200
+
+
+@app.route('/api/tz-info', methods=['GET'])
+def get_tz_info():
+    """Return server timezone info.
+
+    JSON fields:
+      - tz_offset_min: integer minutes east of UTC (negative = west)
+      - tz_name: timezone name as returned by datetime.tzname()
+      - timestamp: ISO 8601 timestamp in server local timezone
+    """
+    # Current local time (naive), convert to timezone-aware local
+    now = datetime.now()
+    now_aware = make_timezone_aware(now)
+
+    # Compute offset in minutes (utcoffset returns timedelta or None)
+    offset = now_aware.utcoffset()
+    if offset is None:
+        tz_offset_min = 0
+    else:
+        tz_offset_min = int(offset.total_seconds() / 60)
+
+    tz_name = now_aware.tzname() or ''
+    iso_timestamp = now_aware.isoformat()
+
+    return jsonify({
+        'tz_offset_min': tz_offset_min,
+        'tz_name': tz_name,
+        'timestamp': iso_timestamp
     }), 200
 
 @app.route('/add-user')
@@ -1922,7 +1953,6 @@ def get_settings():
 
     result = {
         'automatic_daily_cash_out': settings_dict.get('automatic_daily_cash_out', '1') == '1',
-        'daily_cash_out_time': settings_dict.get('daily_cash_out_time', '00:00'),
         'max_rollover_points': int(settings_dict.get('max_rollover_points', '4')),
         'daily_cooldown_hours': int(settings_dict.get('daily_cooldown_hours', '12')),
         'weekly_cooldown_days': int(settings_dict.get('weekly_cooldown_days', '4')),
@@ -1990,32 +2020,6 @@ def update_settings():
             VALUES (%s, 'automatic_daily_cash_out', %s)
             ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
         ''', (tenant_id, value))
-    
-    if 'daily_cash_out_time' in data:
-        time_value = data['daily_cash_out_time']
-        # Validate time format (HH:MM)
-        try:
-            time_parts = time_value.split(':')
-            if len(time_parts) != 2:
-                raise ValueError('Invalid time format')
-            hour = int(time_parts[0])
-            minute = int(time_parts[1])
-            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Time must be in 24-hour format (00:00 to 23:59)'}), 400
-            old_value = current_settings.get('daily_cash_out_time', '00:00')
-            if time_value != old_value:
-                changed_settings['daily_cash_out_time'] = {'old': old_value, 'new': time_value}
-            cursor.execute('''
-                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
-                VALUES (%s, 'daily_cash_out_time', %s)
-                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (tenant_id, time_value))
-        except (ValueError, TypeError) as e:
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'Daily cash out time must be in HH:MM format (e.g., 00:00 for midnight)'}), 400
     
     if 'max_rollover_points' in data:
         try:
@@ -3003,8 +3007,6 @@ def get_setting(key, default):
                 return int(result.get('setting_value'))
             except Exception:
                 return default
-        elif key == 'daily_cash_out_time':
-            return result.get('setting_value', default)
         return result.get('setting_value')
     return default
 
@@ -3090,50 +3092,7 @@ def process_daily_cash_out(triggered_manually=False):
     
     logger.info(f"Daily cash out processed at {datetime.now()}")
 
-def get_last_daily_cash_out_date():
-    """Get the last date when daily cash out was processed from database."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-        if not tenant_id:
-            cursor.close()
-            conn.close()
-            return None
-        cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, 'last_daily_cash_out_date'))
-        result = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if result and result.get('setting_value'):
-            return datetime.strptime(result['setting_value'], '%Y-%m-%d').date()
-        return None
-    except Exception as e:
-        logger.error(f"Error getting last daily cash out date: {e}", exc_info=True)
-        return None
 
-def set_last_daily_cash_out_date(date):
-    """Store the last date when daily cash out was processed in database."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        date_str = date.strftime('%Y-%m-%d')
-        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-        if not tenant_id:
-            cursor.close()
-            conn.close()
-            return
-        cursor.execute('''
-            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
-            VALUES (%s, 'last_daily_cash_out_date', %s)
-            ON CONFLICT (tenant_id, setting_key) 
-            DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (tenant_id, date_str))
-        conn.commit()
-        cursor.close()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Error setting last daily cash out date: {e}", exc_info=True)
 
 
 @app.route('/api/record-chore', methods=['POST'])
@@ -3561,23 +3520,21 @@ def job_timer():
     
     while True:
         try:
-            # Get configured cash out time (default to midnight)
-            cash_out_time_str = get_setting('daily_cash_out_time', '00:00')
+            # Automatic cash out will always be at midnight
+            cash_out_time_str = '00:00'
             try:
                 cash_out_hour, cash_out_minute = map(int, cash_out_time_str.split(':'))
             except (ValueError, AttributeError):
                 # Fallback to midnight if parsing fails
                         cash_out_hour, cash_out_minute = 0, 0
                         logger.warning(f"Failed to parse cash out time '{cash_out_time_str}', using midnight (00:00)")
-            # Get last automatic cash out date from database (persisted across restarts)
-            last_processed_date = get_last_daily_cash_out_date()
 
             # Get current time in local system timezone
             now = datetime.now()
             current_date = now.date()
 
             jobs_to_trigger = []
-            if now.hour == cash_out_hour and now.minute == cash_out_minute and last_processed_date != current_date:
+            if now.hour == cash_out_hour and now.minute == cash_out_minute:
                 jobs_to_trigger.append("cash_out")
 
             if now.hour == 0 and now.minute == 0:

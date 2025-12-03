@@ -42,12 +42,15 @@
                             </label>
                         </div>
                         <div class="text-body">
-                            When enabled, excess points (above Max Rollover Points) are automatically converted to cash at the configured time at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
-                        </div>
-                        <div class="input-group" style="margin-top: 12px;">
-                            <label for="dailyCashOutTime" class="setting-name">Cash Out Time:</label>
-                            <input type="time" id="dailyCashOutTime" class="form-input" required style="width: 180px;">
-                            <span style="color: #666; margin-left: 8px;">(if automatic cash out has already run today, changing this time will not take effect until tomorrow)</span>
+                            <div class="text-body">
+                                When enabled, excess points (above Max Rollover Points) are automatically converted to cash at midnight at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
+
+                                <div style="margin-top:8px; color:#444;">
+                                    Timezone used for scheduled daily cash-out:
+                                    <strong id="tzDisplay">Loading timezone...</strong>
+                                    <!-- TZ loader script moved to the main <script> block at the bottom of the page -->
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -396,9 +399,6 @@
                 const settings = await getSettings();
 
                 document.getElementById('automaticDailyCashOut').checked = settings.automatic_daily_cash_out;
-                // Set cash out time (format: HH:MM, convert to time input format)
-                const cashOutTime = settings.daily_cash_out_time || '00:00';
-                document.getElementById('dailyCashOutTime').value = cashOutTime;
                 document.getElementById('maxRolloverPoints').value = settings.max_rollover_points;
                 document.getElementById('dailyCooldownHours').value = settings.daily_cooldown_hours || 12;
                 document.getElementById('weeklyCooldownDays').value = settings.weekly_cooldown_days || 4;
@@ -448,7 +448,6 @@
 
             const data = {
                 automatic_daily_cash_out: document.getElementById('automaticDailyCashOut').checked,
-                daily_cash_out_time: document.getElementById('dailyCashOutTime').value,
                 max_rollover_points: parseInt(document.getElementById('maxRolloverPoints').value),
                 daily_cooldown_hours: parseInt(document.getElementById('dailyCooldownHours').value),
                 weekly_cooldown_days: parseInt(document.getElementById('weeklyCooldownDays').value),
@@ -1412,6 +1411,37 @@
 
         // Load footer on page load
         loadAppFooter();
+
+        // Populate timezone display using shared helper in static/js/utils.js
+        async function loadTzDisplay() {
+            try {
+                const info = await getServerTzInfo();
+                const el = document.getElementById('tzDisplay');
+                if (!el) return;
+                if (!info) {
+                    el.textContent = 'Unavailable';
+                    return;
+                }
+
+                // tz_offset_min is minutes east of UTC (negative = west)
+                const offsetMin = Number(info.tz_offset_min) || 0;
+                const absMin = Math.abs(offsetMin);
+                const hrs = Math.trunc(absMin / 60);
+                const mins = absMin % 60;
+                const sign = offsetMin <= 0 ? '-' : '+'; // negative means west (UTC-...)
+                const offsetStr = `UTC${sign}${hrs}${mins ? ':' + String(mins).padStart(2, '0') : ''}`;
+                const name = info.tz_name || '';
+
+                el.textContent = name ? `${name} (${offsetStr})` : offsetStr;
+            } catch (err) {
+                console.error('Error loading TZ info:', err);
+                const el = document.getElementById('tzDisplay');
+                if (el) el.textContent = 'Unavailable';
+            }
+        }
+
+        // Call it now so the timezone appears on the settings page
+        loadTzDisplay();
 
         // Send test email
         async function handleSendTestEmail() {
