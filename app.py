@@ -2312,18 +2312,8 @@ def update_settings():
                 conn.close()
                 return jsonify({'error': 'Tenant context required to set parent PIN'}), 400
 
-            # Optionally fetch existing tenant-scoped PIN for logging
-            try:
-                cursor.execute("SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s", (tenant_id, 'parent_pin'))
-                existing = cursor.fetchone()
-            except Exception:
-                existing = None
-
-            old_value = existing.get('setting_value') if existing else ''
-            if old_value:
-                changed_settings['parent_pin'] = {'old': '<set>', 'new': '<changed>'}
-            else:
-                changed_settings['parent_pin'] = {'old': '<not set>', 'new': '<changed>'}
+            # Log that PIN was changed (don't report old/new values for security)
+            changed_settings['parent_pin'] = 'changed'
 
             # Encrypt the PIN before storing for security
             encrypted_pin = encrypt_password(pin_value)
