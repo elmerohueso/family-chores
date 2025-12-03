@@ -9,3 +9,4 @@ check_unused_classes.py
 .env
 MIGRATION_PLAN.md
 scripts/run_init_db.ps1
+scripts/restore_prod_db.ps1

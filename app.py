@@ -295,7 +295,13 @@ def kid_permission_required(permission_key):
                 conn = get_db_connection()
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 try:
-                    cursor.execute(f'SELECT {col} FROM roles WHERE role_name = %s', ('kid',))
+                    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+                    if not tenant_id:
+                        # No tenant context -> deny
+                        cursor.close()
+                        conn.close()
+                        return redirect(url_for('index'))
+                    cursor.execute(f'SELECT {col} FROM tenant_roles WHERE tenant_id = %s AND role_name = %s', (tenant_id, 'kid'))
                     row = cursor.fetchone()
                 finally:
                     cursor.close()
@@ -771,6 +777,36 @@ def api_create_tenant():
             except Exception:
                 pass
             return jsonify({'error': 'Failed to store parent PIN'}), 500
+
+        # Seed tenant_roles for the new tenant: create a 'kid' role (defaults False)
+        # and a 'parent' role (all permissions True). This is idempotent.
+        try:
+            cur.execute('''
+                INSERT INTO tenant_roles (tenant_id, role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, role_name) DO UPDATE
+                SET can_record_chore = EXCLUDED.can_record_chore,
+                    can_redeem_points = EXCLUDED.can_redeem_points,
+                    can_withdraw_cash = EXCLUDED.can_withdraw_cash,
+                    can_view_history = EXCLUDED.can_view_history
+            ''', (tenant_id, 'kid', False, False, False, False))
+        except Exception:
+            # Non-fatal; continue even if seeding fails
+            pass
+
+        try:
+            cur.execute('''
+                INSERT INTO tenant_roles (tenant_id, role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, role_name) DO UPDATE
+                SET can_record_chore = TRUE,
+                    can_redeem_points = TRUE,
+                    can_withdraw_cash = TRUE,
+                    can_view_history = TRUE
+            ''', (tenant_id, 'parent', True, True, True, True))
+        except Exception:
+            # Non-fatal; continue even if seeding fails
+            pass
 
         conn.commit()
 
@@ -1874,8 +1910,13 @@ def get_settings():
     # Fetch kid role permissions from roles table if available (roles table now authoritative)
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
-    kid_role = cursor.fetchone()
+    # Tenant-scoped roles lookup
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if tenant_id:
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
+        kid_role = cursor.fetchone()
+    else:
+        kid_role = None
     cursor.close()
     conn.close()
 
@@ -1932,7 +1973,8 @@ def update_settings():
     cursor = conn.cursor()
     # Fetch current kid role permissions from roles table for comparison and updates
     try:
-        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        # Tenant-scoped roles lookup for comparison
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
         current_role_perms = cursor.fetchone()
         # cursor.fetchone() returns a tuple in this cursor type; convert to dict-like access using RealDictCursor earlier if needed
     except Exception:
@@ -1944,10 +1986,10 @@ def update_settings():
         if str(value) != str(old_value):
             changed_settings['automatic_daily_cash_out'] = {'old': old_value == '1', 'new': data['automatic_daily_cash_out']}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('automatic_daily_cash_out', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'automatic_daily_cash_out', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, value))
     
     if 'daily_cash_out_time' in data:
         time_value = data['daily_cash_out_time']
@@ -1966,10 +2008,10 @@ def update_settings():
             if time_value != old_value:
                 changed_settings['daily_cash_out_time'] = {'old': old_value, 'new': time_value}
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('daily_cash_out_time', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (time_value,))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'daily_cash_out_time', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, time_value))
         except (ValueError, TypeError) as e:
             cursor.close()
             conn.close()
@@ -1986,10 +2028,10 @@ def update_settings():
             if str(max_points) != str(old_value):
                 changed_settings['max_rollover_points'] = {'old': int(old_value), 'new': max_points}
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('max_rollover_points', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (str(max_points),))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'max_rollover_points', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, str(max_points)))
         except (ValueError, TypeError):
             cursor.close()
             conn.close()
@@ -2007,10 +2049,10 @@ def update_settings():
             if str(daily_hours) != str(old_value):
                 changed_settings['daily_cooldown_hours'] = {'old': int(old_value), 'new': daily_hours}
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('daily_cooldown_hours', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (str(daily_hours),))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'daily_cooldown_hours', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, str(daily_hours)))
         except (ValueError, TypeError):
             cursor.close()
             conn.close()
@@ -2027,10 +2069,10 @@ def update_settings():
             if str(weekly_days) != str(old_value):
                 changed_settings['weekly_cooldown_days'] = {'old': int(old_value), 'new': weekly_days}
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('weekly_cooldown_days', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (str(weekly_days),))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'weekly_cooldown_days', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, str(weekly_days)))
         except (ValueError, TypeError):
             cursor.close()
             conn.close()
@@ -2047,10 +2089,10 @@ def update_settings():
             if str(monthly_days) != str(old_value):
                 changed_settings['monthly_cooldown_days'] = {'old': int(old_value), 'new': monthly_days}
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('monthly_cooldown_days', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (str(monthly_days),))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'monthly_cooldown_days', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, str(monthly_days)))
         except (ValueError, TypeError):
             cursor.close()
             conn.close()
@@ -2067,9 +2109,14 @@ def update_settings():
                 old_bool = False
         if new_bool != old_bool:
             changed_settings['kid_allowed_record_chore'] = {'old': old_bool, 'new': new_bool}
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Tenant context required'}), 400
         cursor.execute('''
-            UPDATE roles SET can_record_chore = %s WHERE role_name = 'kid'
-        ''', (new_bool,))
+            UPDATE tenant_roles SET can_record_chore = %s WHERE role_name = 'kid' AND tenant_id = %s
+        ''', (new_bool, tenant_id))
     
     if 'kid_allowed_redeem_points' in data:
         new_bool = bool(data['kid_allowed_redeem_points'])
@@ -2082,8 +2129,8 @@ def update_settings():
         if new_bool != old_bool:
             changed_settings['kid_allowed_redeem_points'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            UPDATE roles SET can_redeem_points = %s WHERE role_name = 'kid'
-        ''', (new_bool,))
+            UPDATE tenant_roles SET can_redeem_points = %s WHERE role_name = 'kid' AND tenant_id = %s
+        ''', (new_bool, tenant_id))
     
     if 'kid_allowed_withdraw_cash' in data:
         new_bool = bool(data['kid_allowed_withdraw_cash'])
@@ -2096,8 +2143,8 @@ def update_settings():
         if new_bool != old_bool:
             changed_settings['kid_allowed_withdraw_cash'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            UPDATE roles SET can_withdraw_cash = %s WHERE role_name = 'kid'
-        ''', (new_bool,))
+            UPDATE tenant_roles SET can_withdraw_cash = %s WHERE role_name = 'kid' AND tenant_id = %s
+        ''', (new_bool, tenant_id))
     
     if 'kid_allowed_view_history' in data:
         new_bool = bool(data['kid_allowed_view_history'])
@@ -2110,8 +2157,8 @@ def update_settings():
         if new_bool != old_bool:
             changed_settings['kid_allowed_view_history'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            UPDATE roles SET can_view_history = %s WHERE role_name = 'kid'
-        ''', (new_bool,))
+            UPDATE tenant_roles SET can_view_history = %s WHERE role_name = 'kid' AND tenant_id = %s
+        ''', (new_bool, tenant_id))
     
     # Handle email settings
     if 'email_smtp_server' in data:
@@ -2120,10 +2167,10 @@ def update_settings():
         if new_value != old_value:
             changed_settings['email_smtp_server'] = {'old': old_value, 'new': new_value}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_smtp_server', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (new_value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'email_smtp_server', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, new_value))
     
     if 'email_smtp_port' in data:
         try:
@@ -2137,10 +2184,10 @@ def update_settings():
             if new_value != old_value:
                 changed_settings['email_smtp_port'] = {'old': old_value, 'new': new_value}
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('email_smtp_port', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (new_value,))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'email_smtp_port', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, new_value))
         except (ValueError, TypeError):
             cursor.close()
             conn.close()
@@ -2152,10 +2199,10 @@ def update_settings():
         if new_value != old_value:
             changed_settings['email_username'] = {'old': old_value, 'new': new_value}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_username', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (new_value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'email_username', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, new_value))
     
     if 'email_password' in data:
         # Only update password if provided (not empty)
@@ -2167,10 +2214,10 @@ def update_settings():
             # Encrypt the password before storing
             encrypted_password = encrypt_password(data['email_password'])
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('email_password', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (encrypted_password,))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'email_password', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, encrypted_password))
     
     # Handle email notification toggles
     if 'email_notify_chore_completed' in data:
@@ -2179,10 +2226,10 @@ def update_settings():
         if value != old_value:
             changed_settings['email_notify_chore_completed'] = {'old': old_value == '1', 'new': data['email_notify_chore_completed']}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_notify_chore_completed', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'email_notify_chore_completed', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, value))
     
     if 'email_notify_points_redeemed' in data:
         value = '1' if data['email_notify_points_redeemed'] else '0'
@@ -2190,10 +2237,10 @@ def update_settings():
         if value != old_value:
             changed_settings['email_notify_points_redeemed'] = {'old': old_value == '1', 'new': data['email_notify_points_redeemed']}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_notify_points_redeemed', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'email_notify_points_redeemed', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, value))
     
     if 'email_notify_cash_withdrawn' in data:
         value = '1' if data['email_notify_cash_withdrawn'] else '0'
@@ -2201,10 +2248,10 @@ def update_settings():
         if value != old_value:
             changed_settings['email_notify_cash_withdrawn'] = {'old': old_value == '1', 'new': data['email_notify_cash_withdrawn']}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_notify_cash_withdrawn', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'email_notify_cash_withdrawn', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, value))
     
     if 'email_notify_daily_digest' in data:
         value = '1' if data['email_notify_daily_digest'] else '0'
@@ -2212,10 +2259,10 @@ def update_settings():
         if value != old_value:
             changed_settings['email_notify_daily_digest'] = {'old': old_value == '1', 'new': data['email_notify_daily_digest']}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_notify_daily_digest', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'email_notify_daily_digest', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, value))
     
     if 'email_sender_name' in data:
         new_value = data['email_sender_name'] or 'Family Chores'
@@ -2223,10 +2270,10 @@ def update_settings():
         if new_value != old_value:
             changed_settings['email_sender_name'] = {'old': old_value, 'new': new_value}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_sender_name', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (new_value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'email_sender_name', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, new_value))
     
     if 'parent_email_addresses' in data:
         new_value = data['parent_email_addresses'] or ''
@@ -2234,10 +2281,10 @@ def update_settings():
         if new_value != old_value:
             changed_settings['parent_email_addresses'] = {'old': old_value, 'new': new_value}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('parent_email_addresses', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (new_value,))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'parent_email_addresses', %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, new_value))
 
     # Handle parent PIN: only update if provided (non-empty). Accept only exactly 4 digits.
     if 'parent_pin' in data:
@@ -2311,7 +2358,19 @@ def get_kid_permissions():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'kid_allowed_record_chore': False,
+                'kid_allowed_redeem_points': False,
+                'kid_allowed_withdraw_cash': False,
+                'kid_allowed_view_history': False,
+            })
+
+        # Check tenant-scoped roles first
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
         row = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -2404,7 +2463,13 @@ def set_kid_permissions():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         # Fetch current values to compute changes
-        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        # Tenant-scoped roles lookup
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Tenant context required'}), 400
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
         current = cursor.fetchone()
 
         # Prepare upsert: insert if not exists, otherwise update
@@ -2418,15 +2483,15 @@ def set_kid_permissions():
         }
 
         cursor.execute('''
-            INSERT INTO roles (role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (role_name) DO UPDATE SET
+            INSERT INTO tenant_roles (tenant_id, role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (tenant_id, role_name) DO UPDATE SET
                 can_record_chore = EXCLUDED.can_record_chore,
                 can_redeem_points = EXCLUDED.can_redeem_points,
                 can_withdraw_cash = EXCLUDED.can_withdraw_cash,
                 can_view_history = EXCLUDED.can_view_history
         ''', (
-            'kid', insert_vals['can_record_chore'], insert_vals['can_redeem_points'], insert_vals['can_withdraw_cash'], insert_vals['can_view_history']
+            tenant_id, 'kid', insert_vals['can_record_chore'], insert_vals['can_redeem_points'], insert_vals['can_withdraw_cash'], insert_vals['can_view_history']
         ))
 
         # Determine which settings changed for logging
@@ -3053,12 +3118,17 @@ def set_last_daily_cash_out_date(date):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         date_str = date.strftime('%Y-%m-%d')
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('last_daily_cash_out_date', %s)
-            ON CONFLICT (setting_key) 
-            DO UPDATE SET setting_value = %s
-        ''', (date_str, date_str))
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, 'last_daily_cash_out_date', %s)
+            ON CONFLICT (tenant_id, setting_key) 
+            DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, date_str))
         conn.commit()
         cursor.close()
         conn.close()

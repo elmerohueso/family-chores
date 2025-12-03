@@ -162,6 +162,26 @@ def create_tenant_transactions_table(cursor):
     """)
 
 
+def create_tenant_roles_table(cursor):
+    """Create tenant-scoped roles/permissions table if it does not exist.
+
+    This table stores role names (e.g. 'kid', 'parent') and permission
+    boolean columns. It uses a composite primary key (tenant_id, role_name)
+    so the application can `ON CONFLICT` update tenant-scoped roles.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_roles (
+            tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            role_name VARCHAR(50) NOT NULL,
+            can_record_chore BOOLEAN DEFAULT FALSE,
+            can_redeem_points BOOLEAN DEFAULT FALSE,
+            can_withdraw_cash BOOLEAN DEFAULT FALSE,
+            can_view_history BOOLEAN DEFAULT FALSE,
+            PRIMARY KEY (tenant_id, role_name)
+        )
+    """)
+
+
 def create_default_admin_if_missing(cursor):
     """Insert a default Administrator tenant with password 'ChangeMe!' if no Administrator exists.
 
@@ -330,6 +350,63 @@ def create_default_admin_if_missing(cursor):
     except Exception as e:
         print(f'Failed to upsert parent_pin for Administrator tenant: {e}')
     
+    # Migrate kid permission settings from tenant_settings into tenant_roles (role_name='kid')
+    try:
+        perm_keys = ['kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history']
+
+        # Only migrate if a 'kid' role does not already exist for this tenant
+        cursor.execute("SELECT 1 FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
+        existing_kid = cursor.fetchone()
+        if not existing_kid:
+            cursor.execute("SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = ANY(%s)", (tenant_id, perm_keys))
+            perm_rows = cursor.fetchall()
+            perm_map = {k: v for k, v in perm_rows} if perm_rows else {}
+
+            def _to_bool(val):
+                if val is None:
+                    return False
+                if isinstance(val, bool):
+                    return val
+                s = str(val).strip().lower()
+                return s in ('1', 'true', 't', 'yes', 'y')
+
+            can_record = _to_bool(perm_map.get('kid_allowed_record_chore'))
+            can_redeem = _to_bool(perm_map.get('kid_allowed_redeem_points'))
+            can_withdraw = _to_bool(perm_map.get('kid_allowed_withdraw_cash'))
+            can_view = _to_bool(perm_map.get('kid_allowed_view_history'))
+
+            # Insert kid role only when absent (so we don't reset existing permissions on rerun)
+            cursor.execute('''
+                INSERT INTO tenant_roles (tenant_id, role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, role_name) DO NOTHING
+            ''', (tenant_id, 'kid', can_record, can_redeem, can_withdraw, can_view))
+
+            # Remove the migrated permission keys from tenant_settings so they no longer
+            # live in the settings table (idempotent)
+            try:
+                cursor.execute("DELETE FROM tenant_settings WHERE tenant_id = %s AND setting_key = ANY(%s)", (tenant_id, perm_keys))
+            except Exception:
+                # Don't fail the migration if cleanup fails; leave keys in settings as a fallback
+                pass
+
+        # Ensure a parent role exists with all permissions enabled for administrative purposes
+        try:
+            cursor.execute('''
+                INSERT INTO tenant_roles (tenant_id, role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, role_name) DO UPDATE
+                SET can_record_chore = TRUE,
+                    can_redeem_points = TRUE,
+                    can_withdraw_cash = TRUE,
+                    can_view_history = TRUE
+            ''', (tenant_id, 'parent', True, True, True, True))
+        except Exception:
+            # Non-fatal: don't block migration if this insert fails
+            pass
+    except Exception as e:
+        print(f'Warning: failed to migrate kid permissions into tenant_roles for tenant {tenant_id}: {e}')
+    
     # Drop foreign key constraints that reference the legacy tables, then drop the legacy tables themselves.
     try:
         legacy_tables = ['user', 'chores', 'settings', 'cash_balances', 'transactions', 'system_log']
@@ -466,6 +543,7 @@ def init_database():
         create_tenant_users_table(cursor)
         create_tenant_cash_balances_table(cursor)
         create_tenant_transactions_table(cursor)
+        create_tenant_roles_table(cursor)
 
         # Ensure a default Administrator tenant exists when the tenants table is new/empty
         create_default_admin_if_missing(cursor)
