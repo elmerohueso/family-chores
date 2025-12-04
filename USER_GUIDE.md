@@ -2,33 +2,55 @@
 
 Welcome to Family Chores! This guide will help you get started and make the most of your family's chore management system.
 
+**Multi-Tenancy:** Family Chores is built to support multiple independent families (tenants) on a single deployment. Each family's data and settings are strictly isolated—no information is ever shared between tenants. All features described in this guide are tenant-scoped.
+
+
 ## Table of Contents
 
-1. [Getting Started](#getting-started)
-2. [Understanding Points and Rewards](#understanding-points-and-rewards)
-3. [Settings and Configuration](#settings-and-configuration)
-4. [Typical Usage](#typical-usage)
-5. [Tips and Best Practices](#tips-and-best-practices)
-6. [Troubleshooting](#troubleshooting)
+1. [Multi-Tenancy](#multi-tenancy)
+2. [Getting Started](#getting-started)
+3. [Understanding Points and Rewards](#understanding-points-and-rewards)
+4. [Settings and Configuration](#settings-and-configuration)
+5. [Typical Usage](#typical-usage)
+6. [Tips and Best Practices](#tips-and-best-practices)
+7. [Troubleshooting](#troubleshooting)
+
 
 ---
+## Multi-Tenancy
+
+Family Chores is designed for multi-tenancy. Each family (tenant) has its own users, chores, points, rewards, settings, and history. All data is strictly isolated per tenant, and tenant-aware APIs ensure that no information is ever shared between families. All features described in this guide are tenant-scoped. Tenant creation is managed by an administrator or via a secure management key.
+
 
 ## Getting Started
 
 ### First Time Setup
 
+**Before You Begin**
+
+1. Download docker-compose.yml from this repository
+2. Edit the environment variables, ports, and volumes as desired
+- Set the credentials for your initial tenant: `ADMIN_NAME`, `ADMIN_PASSWORD`, `PARENT_PIN`.
+- Set a secure management key: `TENANT_CREATION_KEY`.
+3. From the directory housing docker-compose.yml, run the following commands:
+
+`docker compose up -d`
+
+
 1. **Access the Application**
    - Open your web browser and navigate to `http://localhost:8000` (or your configured port)
+   - Log in with the credentials you set previously.
    - You'll see the home page with a role selection screen
 
 2. **Choose Your Role**
-   - **Parent**: Click "Parent" and enter your PIN (default: `1234`, can be changed in docker-compose environment variables)
+   - **Parent**: Click "Parent" and enter your PIN
    - **Kid**: Click "Kid" to access the kid interface
 
 3. **Initial Setup (Parent Only)**
    - Add family members (users)
    - Create chores with point values
    - Configure settings and permissions
+
 
 ---
 
