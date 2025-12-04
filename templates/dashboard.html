@@ -56,7 +56,7 @@
             <div class="pin-input-section" id="pinInputSection">
                 <div class="pin-input-group">
                     <label for="pinInput" class="label-form label-form-bold">Enter Parent PIN:</label>
-                    <input type="password" id="pinInput" class="form-input form-input-pin" placeholder="----" maxlength="10" autocomplete="off">
+                    <input type="tel" id="pinInput" class="form-input form-input-pin" placeholder="----" maxlength="4" autocomplete="off" inputmode="numeric" pattern="[0-9]*" style="-webkit-text-security: disc;">
                     <div id="pinError" class="pin-error">Invalid PIN. Please try again.</div>
                 </div>
                 <div class="role-buttons">
