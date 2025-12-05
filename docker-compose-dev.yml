@@ -30,6 +30,7 @@ services:
     volumes:
       - avatar_data:/data/avatars
       - backup_data:/data/backups
+      - syslog_data:/data/syslogs
     environment:
       - FLASK_ENV=development
       - SECRET_KEY=dev-secret-key-change-in-production
@@ -68,3 +69,4 @@ volumes:
   db_data:
   avatar_data:
   backup_data:
+  syslog_data:

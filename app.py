@@ -16,6 +16,7 @@ from email.utils import formataddr
 from cryptography.fernet import Fernet
 import base64
 import logging
+from logging.handlers import RotatingFileHandler
 import jwt
 import secrets
 import hashlib
@@ -24,13 +25,36 @@ from argon2 import PasswordHasher, exceptions as argon2_exceptions
 # Argon2 hasher instance (raise if argon2-cffi missing so failures are visible)
 ph = PasswordHasher()
 
-# Configure logging
+# Configure logging with rotation
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+LOG_DIR = '/data/syslogs'
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Create log file with rotation: 20MB max size, keep last 10 files
+log_filename = os.path.join(LOG_DIR, 'app.log')
+log_format = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+# Set up root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+
+# Add rotating file handler (20MB max, keep 10 backups)
+file_handler = RotatingFileHandler(
+    log_filename,
+    maxBytes=20 * 1024 * 1024,  # 20MB
+    backupCount=10
+)
+file_handler.setFormatter(log_format)
+root_logger.addHandler(file_handler)
+
+# Add console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_format)
+root_logger.addHandler(console_handler)
+
 logger = logging.getLogger(__name__)
 
 logger.info("Application starting")
