@@ -10,6 +10,12 @@
   "orientation": "portrait-primary",
   "icons": [
     {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
       "src": "/static/icons/icon-72x72.png",
       "sizes": "72x72",
       "type": "image/png",
@@ -58,31 +64,5 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["productivity", "lifestyle"],
-  "shortcuts": [
-    {
-      "name": "Record Chore",
-      "short_name": "Record",
-      "description": "Quickly record a completed chore",
-      "url": "/record_chore",
-      "icons": [
-        {
-          "src": "/static/icons/icon-192x192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "description": "View family dashboard",
-      "url": "/dashboard",
-      "icons": [
-        {
-          "src": "/static/icons/icon-192x192.png",
-          "sizes": "192x192"
-        }
-      ]
-    }
-  ]
+  "categories": ["productivity", "lifestyle"]
 }
