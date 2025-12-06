@@ -1018,7 +1018,7 @@ def api_verify_tenant_email():
         cur.execute('''
             SELECT tenant_id, tenant_name, verification_token, token_expires_at, email_verified
             FROM tenants WHERE tenant_id = %s
-        ''', (tenant_id,))
+        ''', (str(tenant_id),))
         tenant_row = cur.fetchone()
         
         if not tenant_row:
@@ -1050,7 +1050,7 @@ def api_verify_tenant_email():
             UPDATE tenants 
             SET email_verified = TRUE, verification_token = NULL, token_expires_at = NULL
             WHERE tenant_id = %s
-        ''', (tenant_id,))
+        ''', (str(tenant_id),))
         conn.commit()
         
         try:
@@ -1059,8 +1059,8 @@ def api_verify_tenant_email():
             pass
         
         # Create access and refresh tokens for the verified tenant
-        access_token = create_access_token(tenant_id)
-        refresh_token, refresh_expires = create_refresh_token_record(conn, tenant_id, request.headers.get('User-Agent'), request.remote_addr)
+        access_token = create_access_token(str(tenant_id))
+        refresh_token, refresh_expires = create_refresh_token_record(conn, str(tenant_id), request.headers.get('User-Agent'), request.remote_addr)
         
         cur.close()
         conn.close()
