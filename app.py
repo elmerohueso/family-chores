@@ -354,6 +354,12 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/create-tenant')
+def create_tenant_page():
+    """Page to create a new tenant with an invite token."""
+    return render_template('create_tenant.html')
+
+
 # Global auth enforcement: require authentication for all routes except a small whitelist
 @app.before_request
 def require_auth_for_everything():
