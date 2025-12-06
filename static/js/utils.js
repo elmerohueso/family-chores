@@ -667,6 +667,88 @@ async function createTenant(data) {
 }
 
 /**
+ * Fetch invite details (e.g., email restrictions) for a given token.
+ * Returns null on error or if token is missing.
+ * @param {string} token - Invite token to validate
+ * @returns {Promise<Object|null>} Invite info payload or null when unavailable
+ */
+async function fetchInviteInfo(token) {
+    if (!token) return null;
+
+    try {
+        const response = await fetch('/api/invite-info', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ token })
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.warn('Could not fetch invite info:', error);
+        return null;
+    }
+}
+
+/**
+ * Verify tenant email address via token from URL parameters.
+ * Calls /api/verify-tenant-email and stores tokens on success.
+ * @param {Function} updateUICallback - Callback function(status, title, message, isError) to update UI
+ * @returns {Promise<void>}
+ */
+async function verifyEmail(updateUICallback) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tenantId = urlParams.get('tenant_id');
+    const token = urlParams.get('token');
+
+    if (!tenantId || !token) {
+        updateUICallback('error', 'Invalid Verification Link', 'The verification link is missing required parameters. Please request a new verification email.', true);
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/verify-tenant-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                tenant_id: tenantId,
+                token: token
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            updateUICallback('error', 'Verification Failed', data.error || 'Failed to verify email. Please try again.', true);
+            return;
+        }
+
+        // Success! Store tokens and redirect to dashboard
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        if (data.refresh_expires) {
+            localStorage.setItem('refresh_expires', data.refresh_expires);
+        }
+
+        updateUICallback('success', 'Email Verified!', 'Your account has been activated. Redirecting to dashboard...', false);
+        
+        setTimeout(() => {
+            window.location.href = '/dashboard';
+        }, 2000);
+
+    } catch (error) {
+        updateUICallback('error', 'Verification Error', `An error occurred: ${error.message}`, true);
+    }
+}
+
+/**
  * Safely escape text for HTML insertion
  * @param {string} text - Raw text to escape
  * @returns {string} Escaped HTML string

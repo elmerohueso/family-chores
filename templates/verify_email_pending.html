@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include '_head_includes.html' %}
+    <title>Verify Your Email - Family Chores</title>
+    <style>
+        .verification-container {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .verification-icon {
+            font-size: 64px;
+            margin: 20px 0;
+        }
+
+        .verification-message {
+            margin: 20px 0;
+            font-size: 16px;
+            line-height: 1.8;
+        }
+
+        .action-buttons {
+            margin-top: 40px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .action-buttons a, .action-buttons button {
+            margin: 5px;
+        }
+
+        .info-box {
+            background-color: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 30px 0;
+            text-align: left;
+            border-radius: 4px;
+        }
+
+        .info-box h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+
+        .info-box ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .info-box li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-sm">
+        <div class="card" style="margin-top: 40px;">
+            <div class="verification-container">
+                <h1>Verify Your Email</h1>
+                <div class="verification-icon">📧</div>
+                
+                <div class="verification-message">
+                    <p>Thank you for creating your Family Chores account!</p>
+                    <p><strong>A verification email has been sent to your email address.</strong></p>
+                    <p>Please click the link in the email to verify your account and activate it.</p>
+                </div>
+
+                <div class="info-box">
+                    <h3>What's Next?</h3>
+                    <ul>
+                        <li>Check your email inbox for a message from Family Chores</li>
+                        <li>Click the "Verify Email" link in the email</li>
+                        <li>You'll be automatically logged in after verification</li>
+                        <li>The verification link expires in 24 hours</li>
+                    </ul>
+                </div>
+
+                <div class="info-box" style="background-color: #fff3e0; border-left-color: #ff9800;">
+                    <h3 style="color: #ff9800;">Didn't Receive the Email?</h3>
+                    <ul>
+                        <li>Check your spam or junk folder</li>
+                        <li>Wait a few minutes and refresh your inbox</li>
+                        <li>Make sure you entered the correct email address</li>
+                    </ul>
+                </div>
+
+                <div class="action-buttons">
+                    <a href="/" class="btn btn-white-on-purple btn-md">Back to Login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Optional: Add resend email functionality
+        // This can be added later if needed
+    </script>
+</body>
+</html>

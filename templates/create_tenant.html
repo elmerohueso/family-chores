@@ -84,6 +84,19 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="tenantEmail" class="label-form">Email Address <span id="emailRequiredLabel" style="display: none; color: #dc3545;">*</span></label>
+                    <input 
+                        type="email" 
+                        id="tenantEmail" 
+                        class="form-input" 
+                        placeholder="admin@example.com"
+                        autocomplete="email"
+                    />
+                    <div class="help-text" id="emailHelpText">We'll send you a verification link to activate your account</div>
+                    <div class="help-text" id="emailRestrictedText" style="display: none; color: #dc3545;">This invite requires a specific email address</div>
+                </div>
+
+                <div class="form-group">
                     <label for="parentPin" class="label-form">Parent PIN *</label>
                     <input 
                         type="text" 
@@ -128,13 +141,41 @@
             }, 3000);
         }
 
+        // Validate invite and update email UI hints using shared fetch helper
+        async function validateInviteToken(token) {
+            if (!token) return;
+
+            const data = await fetchInviteInfo(token);
+            if (!data || !data.allowed_email) return;
+
+            const emailField = document.getElementById('tenantEmail');
+            const emailRequiredLabel = document.getElementById('emailRequiredLabel');
+            const emailHelpText = document.getElementById('emailHelpText');
+            const emailRestrictedText = document.getElementById('emailRestrictedText');
+
+            if (emailField && emailRequiredLabel && emailHelpText && emailRestrictedText) {
+                emailField.required = true;
+                emailRequiredLabel.style.display = 'inline';
+                emailHelpText.style.display = 'none';
+                emailRestrictedText.textContent = `This invite can only be used by: ${data.allowed_email}`;
+                emailRestrictedText.style.display = 'block';
+                emailField.value = data.allowed_email;
+            }
+        }
+
         // Pre-fill invite token from URL if provided
         document.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
             const token = urlParams.get('token');
             if (token) {
                 document.getElementById('inviteToken').value = token;
+                validateInviteToken(token);
             }
+        });
+
+        // Listen for changes to invite token field
+        document.getElementById('inviteToken').addEventListener('change', (e) => {
+            validateInviteToken(e.target.value.trim());
         });
 
         // Strong password validation function
@@ -194,6 +235,7 @@
             const password = document.getElementById('password').value;
             const confirmPassword = document.getElementById('confirmPassword').value;
             const parentPin = document.getElementById('parentPin').value.trim();
+            const tenantEmail = document.getElementById('tenantEmail').value.trim();
 
             // Validate PIN is 4 digits
             if (!/^\d{4}$/.test(parentPin)) {
@@ -227,7 +269,7 @@
             }
 
             if (!inviteToken || !tenantName || !password || !parentPin) {
-                showToast('All fields are required', true);
+                showToast('All required fields must be filled', true);
                 return;
             }
 
@@ -240,7 +282,8 @@
                     tenant_name: tenantName,
                     password: password,
                     parent_pin: parentPin,
-                    invite_token: inviteToken
+                    invite_token: inviteToken,
+                    tenant_email: tenantEmail || null
                 });
 
                 const data = await response.json();
@@ -250,15 +293,30 @@
                     return;
                 }
 
-                // Success - clear any existing session data
-                sessionStorage.clear();
-                localStorage.clear();
-                
-                showToast(`Tenant "${tenantName}" created successfully! Redirecting to login...`);
-                
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 2000);
+                // Check if email verification is pending
+                if (data.pending_verification) {
+                    sessionStorage.clear();
+                    localStorage.clear();
+                    
+                    showToast(data.message || 'Check your email to verify your account');
+                    
+                    // Show verification pending page or redirect to verification page
+                    setTimeout(() => {
+                        // Store tenant_id for verification page (optional)
+                        sessionStorage.setItem('pending_tenant_id', data.tenant_id);
+                        window.location.href = '/verify-email-pending';
+                    }, 2000);
+                } else {
+                    // No email verification needed, proceed to login
+                    sessionStorage.clear();
+                    localStorage.clear();
+                    
+                    showToast(`Tenant "${tenantName}" created successfully! Redirecting to login...`);
+                    
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                }
 
             } catch (error) {
                 showToast(`Error: ${error.message}`, true);

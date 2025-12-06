@@ -54,6 +54,14 @@ services:
       - ACCESS_TOKEN_EXPIRES=900
       # REFRESH_TOKEN_EXPIRES: refresh token lifetime in seconds (default: 2592000 = 30 days)
       - REFRESH_TOKEN_EXPIRES=2592000
+      # SMTP Configuration for email notifications and tenant email verification
+      - SMTP_SERVER=${SMTP_SERVER}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_SENDER_NAME=${SMTP_SENDER_NAME}
+      # Application URL for verification links
+      - APP_URL=${APP_URL}
     networks:
       - familychores-network
     depends_on:

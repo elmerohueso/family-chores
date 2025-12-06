@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include '_head_includes.html' %}
+    <title>Verify Your Email - Family Chores</title>
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+        }
+
+        .verification-container {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .verification-status {
+            font-size: 48px;
+            margin: 20px 0;
+        }
+
+        .success {
+            color: #4caf50;
+        }
+
+        .error {
+            color: #dc3545;
+        }
+
+        .pending {
+            color: #ff9800;
+        }
+
+        .verification-message {
+            margin: 20px 0;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .action-buttons {
+            margin-top: 40px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .action-buttons a, .action-buttons button {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-sm">
+        <div class="card" style="margin-top: 40px;">
+            <div class="verification-container">
+                <div id="verificationContent">
+                    <h1>Verifying Your Email...</h1>
+                    <div class="verification-status pending">
+                        <span class="loading-spinner"></span>Processing...
+                    </div>
+                    <div class="verification-message">
+                        Please wait while we verify your email address.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateUI(status, title, message, isError) {
+            const content = document.getElementById('verificationContent');
+            const statusIcon = {
+                'success': '✓',
+                'error': '✗',
+                'pending': 'Loading...'
+            }[status] || '?';
+
+            content.innerHTML = `
+                <h1>${title}</h1>
+                <div class="verification-status ${status}">
+                    ${status === 'pending' ? '<span class="loading-spinner"></span>' : ''}
+                    ${statusIcon}
+                </div>
+                <div class="verification-message">
+                    ${message}
+                </div>
+                ${status !== 'pending' ? `
+                <div class="action-buttons">
+                    <a href="/" class="btn btn-white-on-purple btn-md">Back to Login</a>
+                </div>
+                ` : ''}
+            `;
+        }
+
+        // Start verification when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            verifyEmail(updateUI);
+        });
+    </script>
+</body>
+</html>

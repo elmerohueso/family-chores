@@ -50,6 +50,10 @@ def create_tenants_table(cursor):
             tenant_name VARCHAR(255) NOT NULL UNIQUE,
             tenant_password VARCHAR(1000) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+               , admin_email VARCHAR(255)
+               , email_verified BOOLEAN DEFAULT FALSE
+               , verification_token VARCHAR(255)
+               , token_expires_at TIMESTAMP
         )
     """)
 

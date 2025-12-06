@@ -360,6 +360,18 @@ def create_tenant_page():
     return render_template('create_tenant.html')
 
 
+@app.route('/verify-email')
+def verify_email_page():
+    """Page to verify tenant email via token link."""
+    return render_template('verify_email.html')
+
+
+@app.route('/verify-email-pending')
+def verify_email_pending_page():
+    """Page shown after tenant creation with email verification pending."""
+    return render_template('verify_email_pending.html')
+
+
 # Global auth enforcement: require authentication for all routes except a small whitelist
 @app.before_request
 def require_auth_for_everything():
@@ -372,6 +384,8 @@ def require_auth_for_everything():
     whitelist = set([
         '/',
         '/create-tenant',
+        '/verify-email',
+        '/verify-email-pending',
         '/api/auth/login',
         '/api/auth-check',
         '/api/tenant-login',
@@ -379,6 +393,8 @@ def require_auth_for_everything():
         '/api/auth/logout',
         '/api/tenants',
         '/api/tenants/invites',  # Allow invite creation with management key (no auth required)
+        '/api/invite-info',  # Allow getting invite info (email restriction check)
+        '/api/verify-tenant-email',  # Allow email verification endpoint
         # Allow a few read-only endpoints used by head/includes and utils
         '/api/version',
         '/api/system-time',
@@ -737,8 +753,8 @@ def api_create_tenant():
     """Create a new tenant via invite token (invite-only).
 
     Requires a valid invite token in the JSON body.
-    Expects JSON: { "tenant_name": "...", "password": "...", "parent_pin": "<4-digit>", "invite_token": "..." }
-    Returns: { "tenant_id": "<uuid>" }
+    Expects JSON: { "tenant_name": "...", "password": "...", "parent_pin": "<4-digit>", "invite_token": "...", "tenant_email": "..." }
+    Returns: { "tenant_id": "<uuid>", "pending_verification": true, "message": "Check your email..." } or { "tenant_id": "<uuid>" }
     """
     # Parse JSON body early
     if not request.is_json:
@@ -748,6 +764,7 @@ def api_create_tenant():
     password = data.get('password') or ''
     parent_pin = (data.get('parent_pin') or '').strip()
     invite_token = (data.get('invite_token') or '').strip()
+    tenant_email = (data.get('tenant_email') or '').strip()
 
     # Require invite token (no management key fallback)
     if not invite_token:
@@ -789,7 +806,29 @@ def api_create_tenant():
             conn.close()
             return jsonify({'error': 'Invite token already used'}), 403
 
-        # Optionally enforce allowed_email here (not implemented; placeholder)
+        # Enforce allowed_email restriction if specified
+        if allowed_email and allowed_email.strip():
+            allowed_email_lower = allowed_email.strip().lower()
+            tenant_email_lower = tenant_email.lower() if tenant_email else ''
+            
+            if not tenant_email:
+                cur.close()
+                conn.close()
+                try:
+                    log_system_event('tenant_create_email_required', f'Invite requires email but none provided. Allowed: {allowed_email}', None, 'error')
+                except Exception:
+                    pass
+                return jsonify({'error': f'This invite requires registration with email: {allowed_email}'}), 403
+            
+            if tenant_email_lower != allowed_email_lower:
+                cur.close()
+                conn.close()
+                try:
+                    log_system_event('tenant_create_email_mismatch', f'Email mismatch: provided {tenant_email_lower}, allowed {allowed_email_lower}', None, 'error')
+                except Exception:
+                    pass
+                return jsonify({'error': f'This invite is restricted to email: {allowed_email}'}), 403
+
         invite_row = {
             'invite_id': invite_id,
             'token': invite_token,
@@ -830,14 +869,18 @@ def api_create_tenant():
         # Prevent duplicate tenant names (case-insensitive)
         cur.execute("SELECT tenant_id FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (tenant_name,))
         if cur.fetchone():
-            return jsonify({'error': 'Tenant with that name already exists'}), 400
+            return jsonify({'error': 'Chosen username is not available'}), 400
 
         # Hash password with Argon2
         hashed = ph.hash(password)
 
+        # Generate verification token and expiry (24 hours)
+        verification_token = secrets.token_urlsafe(32)
+        token_expires_at = datetime.utcnow() + timedelta(hours=24)
+
         cur.execute(
-            "INSERT INTO tenants (tenant_name, tenant_password) VALUES (%s, %s) RETURNING tenant_id",
-            (tenant_name, hashed)
+            "INSERT INTO tenants (tenant_name, tenant_password, tenant_email, email_verified, verification_token, token_expires_at) VALUES (%s, %s, %s, %s, %s, %s) RETURNING tenant_id",
+            (tenant_name, hashed, tenant_email, False, verification_token, token_expires_at)
         )
         tenant_id = cur.fetchone()[0]
 
@@ -906,6 +949,31 @@ def api_create_tenant():
             except Exception:
                 pass
 
+        # Send verification email if tenant_email provided
+        pending_verification = False
+        if tenant_email:
+            try:
+                send_tenant_verification_email(tenant_id, tenant_email, verification_token)
+                pending_verification = True
+                return jsonify({
+                    'tenant_id': str(tenant_id),
+                    'pending_verification': True,
+                    'message': f'Verification email sent to {tenant_email}. Please check your email to verify your account.'
+                }), 201
+            except Exception as e:
+                # Log error but don't fail the tenant creation
+                try:
+                    log_system_event('tenant_verification_email_failed', f'Failed to send verification email for tenant {tenant_id}', {'error': str(e)}, 'error')
+                except Exception:
+                    pass
+                # Return pending but note email failed
+                return jsonify({
+                    'tenant_id': str(tenant_id),
+                    'pending_verification': True,
+                    'message': 'Tenant created but email verification failed. Please contact support.'
+                }), 201
+
+        # No email provided, return tenant_id only (legacy behavior)
         return jsonify({'tenant_id': str(tenant_id)}), 201
     except Exception as e:
         error_msg = str(e)
@@ -918,6 +986,100 @@ def api_create_tenant():
     finally:
         cur.close()
         conn.close()
+
+
+@app.route('/api/verify-tenant-email', methods=['POST'])
+def api_verify_tenant_email():
+    """Verify tenant email and activate the account.
+    
+    Expects JSON: { "tenant_id": "<uuid>", "token": "<verification_token>" }
+    Returns: { "access_token": "...", "refresh_token": "..." } on success
+    """
+    if not request.is_json:
+        return jsonify({'error': 'Expected JSON body'}), 400
+    
+    data = request.get_json(force=True) or {}
+    tenant_id_str = (data.get('tenant_id') or '').strip()
+    verification_token = (data.get('token') or '').strip()
+    
+    if not tenant_id_str or not verification_token:
+        return jsonify({'error': 'tenant_id and token are required'}), 400
+    
+    try:
+        tenant_id = uuid.UUID(tenant_id_str)
+    except ValueError:
+        return jsonify({'error': 'Invalid tenant_id format'}), 400
+    
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        # Fetch tenant and verify token
+        cur.execute('''
+            SELECT tenant_id, tenant_name, verification_token, token_expires_at, email_verified
+            FROM tenants WHERE tenant_id = %s
+        ''', (tenant_id,))
+        tenant_row = cur.fetchone()
+        
+        if not tenant_row:
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Tenant not found'}), 404
+        
+        # Check if already verified
+        if tenant_row['email_verified']:
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Email already verified'}), 400
+        
+        # Verify token matches and hasn't expired
+        if not tenant_row['verification_token'] or tenant_row['verification_token'] != verification_token:
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Invalid verification token'}), 403
+        
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        token_expires = tenant_row['token_expires_at']
+        if token_expires and token_expires.replace(tzinfo=timezone.utc) < now:
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Verification token has expired. Please request a new one.'}), 403
+        
+        # Mark tenant as verified
+        cur.execute('''
+            UPDATE tenants 
+            SET email_verified = TRUE, verification_token = NULL, token_expires_at = NULL
+            WHERE tenant_id = %s
+        ''', (tenant_id,))
+        conn.commit()
+        
+        try:
+            log_system_event('tenant_email_verified', f'Tenant email verified: {tenant_row["tenant_name"]}', {'tenant_id': str(tenant_id)}, 'success')
+        except Exception:
+            pass
+        
+        # Create access and refresh tokens for the verified tenant
+        access_token = create_access_token(tenant_id)
+        refresh_token, refresh_expires = create_refresh_token_record(conn, tenant_id, request.headers.get('User-Agent'), request.remote_addr)
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            'access_token': access_token,
+            'refresh_token': refresh_token,
+            'refresh_expires': refresh_expires.isoformat() if refresh_expires else None
+        }), 200
+    
+    except Exception as e:
+        conn.rollback()
+        try:
+            log_system_event('tenant_verify_error', f'Error verifying tenant email: {str(e)}', {'tenant_id': str(tenant_id)}, 'error')
+        except Exception:
+            pass
+        cur.close()
+        conn.close()
+        return jsonify({'error': f'Error verifying email: {str(e)}'}), 500
 
 
 @app.route('/api/tenant/password', methods=['POST'])
@@ -985,6 +1147,66 @@ def api_change_tenant_password():
     finally:
         cur.close()
         conn.close()
+
+
+@app.route('/api/invite-info', methods=['POST'])
+def api_get_invite_info():
+    """Get public information about an invite token (no auth required).
+    
+    Expects JSON: { "token": "<invite_token>" }
+    Returns: { "allowed_email": "email@example.com" or null, "valid": true/false }
+    """
+    if not request.is_json:
+        return jsonify({'error': 'Expected JSON body'}), 400
+    
+    data = request.get_json(force=True) or {}
+    token = (data.get('token') or '').strip()
+    
+    if not token:
+        return jsonify({'error': 'Token is required'}), 400
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute('''
+            SELECT expires_at, max_uses, uses, allowed_email
+            FROM tenant_invites WHERE token = %s
+        ''', (token,))
+        row = cur.fetchone()
+        
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({'valid': False, 'allowed_email': None}), 200
+        
+        expires_at, max_uses, uses, allowed_email = row
+        
+        # Check if invite is still valid
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        if expires_at and expires_at < now:
+            cur.close()
+            conn.close()
+            return jsonify({'valid': False, 'allowed_email': None}), 200
+        
+        if max_uses is not None and uses is not None and uses >= max_uses:
+            cur.close()
+            conn.close()
+            return jsonify({'valid': False, 'allowed_email': None}), 200
+        
+        cur.close()
+        conn.close()
+        
+        # Return allowed_email if set, otherwise null
+        return jsonify({
+            'valid': True,
+            'allowed_email': allowed_email.strip() if allowed_email else None
+        }), 200
+    
+    except Exception as e:
+        cur.close()
+        conn.close()
+        return jsonify({'error': f'Error validating invite: {str(e)}'}), 500
 
 
 @app.route('/api/tenants/invites', methods=['POST'])
@@ -2777,6 +2999,128 @@ def send_email(to_email, subject, body_html, body_text=None, settings_dict=None)
         except Exception:
             pass
         return False, error_msg
+
+
+def send_tenant_verification_email(tenant_id, tenant_email, verification_token):
+    """Send tenant email verification link.
+    
+    Args:
+        tenant_id: UUID of the tenant
+        tenant_email: Email address to send verification to
+        verification_token: Verification token for the link
+    
+    Raises:
+        Exception if email sending fails
+    """
+    # Build verification link
+    # Use APP_URL environment variable or fall back to localhost
+    app_url = os.environ.get('APP_URL', 'http://localhost:5000')
+    verification_link = f"{app_url}/verify-email?tenant_id={tenant_id}&token={verification_token}"
+    
+    subject = "Verify your Family Chores Account"
+    body_html = f"""
+    <html>
+      <head></head>
+      <body>
+        <h2>Verify Your Email Address</h2>
+        <p>Thank you for creating a Family Chores account!</p>
+        <p>Please verify your email address by clicking the link below:</p>
+        <p><a href="{verification_link}" style="display: inline-block; padding: 10px 20px; background-color: #667eea; color: white; text-decoration: none; border-radius: 4px;">Verify Email</a></p>
+        <p>Or copy this link into your browser:</p>
+        <p><code>{verification_link}</code></p>
+        <p>This link will expire in 24 hours.</p>
+        <hr>
+        <p style="color: #666; font-size: 12px;">If you did not create this account, please ignore this email.</p>
+      </body>
+    </html>
+    """
+    body_text = f"""Verify Your Email Address
+
+Thank you for creating a Family Chores account!
+
+Please verify your email address by clicking the link below:
+{verification_link}
+
+This link will expire in 24 hours.
+
+If you did not create this account, please ignore this email.
+    """
+    
+    # Try to get SMTP settings from environment variables or system defaults
+    # This allows sending verification emails without requiring tenant settings
+    smtp_server = os.environ.get('SMTP_SERVER', '').strip()
+    smtp_port = os.environ.get('SMTP_PORT', '587').strip()
+    smtp_username = os.environ.get('SMTP_USERNAME', '').strip()
+    smtp_password = os.environ.get('SMTP_PASSWORD', '').strip()
+    smtp_sender_name = os.environ.get('SMTP_SENDER_NAME', 'Family Chores').strip()
+    
+    # If environment variables not set, try to fetch from first tenant's settings as fallback
+    if not all([smtp_server, smtp_username, smtp_password]):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            # Try to get settings from any tenant (use first one)
+            cursor.execute('''
+                SELECT setting_key, setting_value FROM tenant_settings 
+                WHERE setting_key LIKE 'email_%'
+                LIMIT 1
+            ''')
+            results = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            
+            if results:
+                settings_dict = {row['setting_key']: row['setting_value'] for row in results}
+                smtp_server = smtp_server or settings_dict.get('email_smtp_server', '').strip()
+                smtp_port = smtp_port or settings_dict.get('email_smtp_port', '587').strip()
+                smtp_username = smtp_username or settings_dict.get('email_username', '').strip()
+                encrypted_password = settings_dict.get('email_password', '').strip()
+                smtp_password = smtp_password or decrypt_password(encrypted_password) if encrypted_password else ''
+                smtp_sender_name = smtp_sender_name or settings_dict.get('email_sender_name', 'Family Chores').strip()
+        except Exception as e:
+            logger.warning(f"Failed to fetch SMTP settings from database: {e}")
+    
+    # Validate required settings
+    if not all([smtp_server, smtp_username, smtp_password]):
+        raise Exception("Email settings are not configured. Please configure SMTP settings or set environment variables.")
+    
+    try:
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = formataddr((smtp_sender_name, smtp_username))
+        msg['To'] = tenant_email
+        
+        # Add text and HTML parts
+        if body_text:
+            text_part = MIMEText(body_text, 'plain')
+            msg.attach(text_part)
+        
+        html_part = MIMEText(body_html, 'html')
+        msg.attach(html_part)
+        
+        # Connect to SMTP server and send
+        smtp_port_int = int(smtp_port)
+        server = smtplib.SMTP(smtp_server, smtp_port_int, timeout=10)
+        server.starttls()  # Enable encryption
+        server.login(smtp_username, smtp_password)
+        server.send_message(msg)
+        server.quit()
+        
+        # Log successful email send
+        try:
+            log_system_event('tenant_verification_email_sent', f'Verification email sent to {tenant_email}', {'to': tenant_email, 'tenant_id': str(tenant_id)}, 'success')
+        except Exception:
+            pass
+    
+    except smtplib.SMTPAuthenticationError:
+        raise Exception("SMTP authentication failed. Please check your username and password.")
+    except smtplib.SMTPConnectError:
+        raise Exception(f"Could not connect to SMTP server {smtp_server}:{smtp_port}. Please check your SMTP settings.")
+    except smtplib.SMTPException as e:
+        raise Exception(f"SMTP error: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Error sending verification email: {str(e)}")
 
 @app.route('/api/send-test-email', methods=['POST'])
 @parent_required
