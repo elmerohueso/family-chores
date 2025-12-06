@@ -64,7 +64,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-producti
 
 # Application version
 
-__version__ = '2.3.0'
+__version__ = '2.3.1'
 
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
@@ -371,6 +371,7 @@ def require_auth_for_everything():
     # Whitelist: index page and the auth endpoints the login page uses
     whitelist = set([
         '/',
+        '/create-tenant',
         '/api/auth/login',
         '/api/auth-check',
         '/api/tenant-login',
@@ -3777,8 +3778,8 @@ def job_timer():
     while True:
         try:
             # Automatic jobs trigger at midnight
-            trigger_hour = 19
-            trigger_minute = 42
+            trigger_hour = 0
+            trigger_minute = 0
 
             # Get current time in local system timezone
             now = datetime.now()
