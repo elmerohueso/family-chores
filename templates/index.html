@@ -74,42 +74,6 @@
     <script>
       // Note: use `showToast(text, isError)` from shared utils for transient messages
       // Errors are shown with `showToast()`; no inline error element required
-      // Perform auth login: POST to /api/auth/login (server expects tenant_name/password)
-      async function authLogin(username, password) {
-        const resp = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          // send username as tenant_name to reuse existing tenant auth flow
-          body: JSON.stringify({
-            tenant_name: username,
-            password
-          }),
-          credentials: 'include', // ensure cookie Set-Cookie is accepted
-          // Instruct global fetch wrapper not to auto-redirect on 401 for login attempts
-          _skipAuthRedirect: true
-        });
-        // Try to parse JSON; if server returned plain text (or HTML), fall back to text
-        let data = {};
-        try {
-          data = await resp.json();
-        } catch (e) {
-          try {
-            const txt = await resp.text();
-            data = {
-              error: txt
-            };
-          } catch (e2) {
-            data = {};
-          }
-        }
-        return {
-          ok: resp.ok,
-          status: resp.status,
-          data
-        };
-      }
       // On success the server MUST set an HttpOnly cookie named `tenant_id` and a refresh_token cookie.
       // The server returns an access token under either `access_token` or `token`.
       async function doLogin() {
@@ -206,10 +170,7 @@
         const token = localStorage.getItem('fc_token');
         if (!token) return;
         try {
-          const resp = await fetch('/api/auth-check', {
-            method: 'GET',
-            credentials: 'include'
-          });
+          const resp = await authCheck();
           if (resp.ok) {
             // server validated auth (and should have tenant_id cookie)
             window.location.href = '/dashboard';

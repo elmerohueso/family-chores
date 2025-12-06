@@ -594,6 +594,53 @@ async function tenantLogout() {
     window.location.href = '/';
 }
 
+// Lightweight auth check against /api/auth-check; returns the raw Response so callers can inspect .ok
+async function authCheck() {
+    return fetch('/api/auth-check', { method: 'GET', credentials: 'include' });
+}
+
+/**
+ * Perform tenant authentication login.
+ * @param {string} username - Tenant username
+ * @param {string} password - Tenant password
+ * @returns {Promise<{ok: boolean, status: number, data: Object}>} Login result with token/error
+ */
+async function authLogin(username, password) {
+    const resp = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        // send username as tenant_name to reuse existing tenant auth flow
+        body: JSON.stringify({
+            tenant_name: username,
+            password
+        }),
+        credentials: 'include', // ensure cookie Set-Cookie is accepted
+        // Instruct global fetch wrapper not to auto-redirect on 401 for login attempts
+        _skipAuthRedirect: true
+    });
+    // Try to parse JSON; if server returned plain text (or HTML), fall back to text
+    let data = {};
+    try {
+        data = await resp.json();
+    } catch (e) {
+        try {
+            const txt = await resp.text();
+            data = {
+                error: txt
+            };
+        } catch (e2) {
+            data = {};
+        }
+    }
+    return {
+        ok: resp.ok,
+        status: resp.status,
+        data
+    };
+}
+
 /**
  * Safely escape text for HTML insertion
  * @param {string} text - Raw text to escape
