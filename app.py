@@ -1487,11 +1487,10 @@ def get_users():
         SELECT 
             u.user_id,
             u.full_name,
-            u.balance,
+            u.points_balance,
             u.avatar_path,
-            COALESCE(cb.cash_balance, 0.0) as cash_balance
+            u.cash_balance
         FROM tenant_users u
-        LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
         WHERE u.tenant_id = %s
         ORDER BY u.user_id
     ''', (tenant_id,))
@@ -1592,11 +1591,11 @@ def create_user():
         data = request.get_json()
     else:
         data = request.form.to_dict()
-        if 'balance' in data:
+        if 'points_balance' in data:
             try:
-                data['balance'] = int(data['balance'])
+                data['points_balance'] = int(data['points_balance'])
             except (ValueError, TypeError):
-                data['balance'] = 0
+                data['points_balance'] = 0
     
     if not data.get('full_name'):
         return jsonify({'error': 'full_name is required'}), 400
@@ -1610,8 +1609,8 @@ def create_user():
             return jsonify({'error': 'tenant context required'}), 401
 
         cursor.execute(
-            'INSERT INTO tenant_users (tenant_id, full_name, balance) VALUES (%s, %s, %s) RETURNING user_id',
-            (tenant_id, data['full_name'], data.get('balance', 0))
+            'INSERT INTO tenant_users (tenant_id, full_name, points_balance) VALUES (%s, %s, %s) RETURNING user_id',
+            (tenant_id, data['full_name'], data.get('points_balance', 0))
         )
         user_id = cursor.fetchone()[0]
         conn.commit()
@@ -1621,7 +1620,7 @@ def create_user():
         # Log user creation
         try:
             log_system_event('user_added', f'User created: {data["full_name"]}', 
-                            {'user_id': user_id, 'full_name': data['full_name'], 'balance': data.get('balance', 0)}, 'success')
+                            {'user_id': user_id, 'full_name': data['full_name'], 'points_balance': data.get('points_balance', 0)}, 'success')
         except Exception:
             pass  # Don't fail if logging fails
         
@@ -1688,10 +1687,8 @@ def delete_user(user_id):
     except Exception:
         # If transactions table or FK constraints behave differently, ignore and continue
         deleted_tx = None
-
-    cursor.execute('DELETE FROM tenant_cash_balances WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     
-    # Delete user (tenant-scoped)
+    # Delete user (tenant-scoped) - cash_balance is now a column in tenant_users
     cursor.execute('DELETE FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     
     conn.commit()
@@ -1791,7 +1788,7 @@ def send_notification_email(notification_type, user_name, description, value=Non
     if not get_email_notification_setting(setting_key):
         return
     
-    # Get parent email addresses to send notification to
+    # Get parent email addresses and all email settings to send notification to
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     # Tenant-scoped email settings only
@@ -1800,30 +1797,21 @@ def send_notification_email(notification_type, user_name, description, value=Non
         cursor.close()
         conn.close()
         return
-    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', (tenant_id, 'parent_email_addresses', 'email_username'))
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
     results = cursor.fetchall()
     
     # Get user's current balances if user_id is provided (tenant-scoped)
     point_balance = None
     cash_balance = None
     if user_id:
-        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-        if tenant_id:
-            cursor.execute('SELECT balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
-            user_result = cursor.fetchone()
-            if user_result:
-                point_balance = user_result.get('balance') or 0
-
-            cursor.execute('SELECT cash_balance FROM tenant_cash_balances WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
-            cash_result = cursor.fetchone()
-            if cash_result:
-                cash_balance = cash_result.get('cash_balance') or 0
-            else:
-                cash_balance = 0
+        cursor.execute('SELECT points_balance, cash_balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
+        user_result = cursor.fetchone()
+        if user_result:
+            point_balance = user_result.get('points_balance') or 0
+            cash_balance = user_result.get('cash_balance') or 0
         else:
-            # No tenant context; skip balance lookup
-            point_balance = None
-            cash_balance = None
+            point_balance = 0
+            cash_balance = 0
     
     cursor.close()
     conn.close()
@@ -1930,7 +1918,7 @@ Amount: ${abs(value) if value else 'N/A'}
     try:
         for email in email_list:
             try:
-                send_email(email, subject, body_html, body_text)
+                send_email(email, subject, body_html, body_text, settings_dict=settings_dict)
             except Exception:
                 pass  # Silently ignore individual email errors
     except Exception:
@@ -2445,7 +2433,7 @@ def reset_points():
 
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE tenant_users SET balance = 0 WHERE tenant_id = %s', (tenant_id,))
+        cursor.execute('UPDATE tenant_users SET points_balance = 0 WHERE tenant_id = %s', (tenant_id,))
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2482,7 +2470,7 @@ def reset_cash():
 
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE tenant_cash_balances SET cash_balance = 0.0 WHERE tenant_id = %s', (tenant_id,))
+        cursor.execute('UPDATE tenant_users SET cash_balance = 0.0 WHERE tenant_id = %s', (tenant_id,))
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2549,33 +2537,36 @@ def reset_transactions():
         
         return jsonify({'error': f'Error deleting transactions: {error_msg}'}), 500
 
-def send_email(to_email, subject, body_html, body_text=None):
-    """Send an email using SMTP settings from the database.
+def send_email(to_email, subject, body_html, body_text=None, settings_dict=None):
+    """Send an email using SMTP settings from the database or provided settings.
     
     Args:
         to_email: Recipient email address
         subject: Email subject
         body_html: HTML body content
         body_text: Plain text body content (optional)
+        settings_dict: Optional pre-fetched settings dict. If not provided, fetches from database using tenant context.
     
     Returns:
         tuple: (success: bool, message: str) - success indicates if email was sent, message contains status or error
     """
     try:
-        # Get tenant-scoped email settings from database
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-        if not tenant_id:
+        # If settings not provided, fetch from database using tenant context
+        if settings_dict is None:
+            # Get tenant-scoped email settings from database
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+            if not tenant_id:
+                cursor.close()
+                conn.close()
+                return False, 'Tenant context required'
+            cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
+            settings = cursor.fetchall()
             cursor.close()
             conn.close()
-            return False, 'Tenant context required'
-        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
-        settings = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+            
+            settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
         
         smtp_server = settings_dict.get('email_smtp_server', '').strip()
         smtp_port = settings_dict.get('email_smtp_port', '587').strip()
@@ -2757,7 +2748,7 @@ Sent from Family Chores application
 def send_daily_digest_manual():
     """Manually trigger sending of daily digest email."""
     try:
-        send_daily_digest_email(force=True)
+        send_daily_digest_email(triggered_manually=True)
         return jsonify({'message': 'Daily digest email sent successfully'}), 200
     except Exception as e:
         error_msg = str(e)
@@ -2794,10 +2785,9 @@ def withdraw_cash():
 
     # Check user exists and get cash balance (tenant-scoped)
     cursor.execute('''
-        SELECT u.user_id, COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM tenant_users u
-        LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
-        WHERE u.user_id = %s AND u.tenant_id = %s
+        SELECT user_id, cash_balance
+        FROM tenant_users
+        WHERE user_id = %s AND tenant_id = %s
     ''', (data['user_id'], tenant_id))
     user = cursor.fetchone()
     
@@ -2811,17 +2801,10 @@ def withdraw_cash():
         cursor.close()
         conn.close()
         return jsonify({'error': f'Insufficient cash balance. User has ${current_cash:.2f}.'}), 400
-    
-    # Ensure cash_balance record exists (tenant-scoped)
-    cursor.execute('''
-        INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) 
-        VALUES (%s, %s, 0.0)
-        ON CONFLICT (tenant_id, user_id) DO NOTHING
-    ''', (tenant_id, data['user_id']))
 
     # Update cash_balance (subtract amount)
     cursor.execute('''
-        UPDATE tenant_cash_balances 
+        UPDATE tenant_users 
         SET cash_balance = cash_balance - %s 
         WHERE user_id = %s AND tenant_id = %s
     ''', (float(amount), data['user_id'], tenant_id))
@@ -2891,67 +2874,153 @@ def process_daily_cash_out(triggered_manually=False):
     """Process daily cash out for all users at midnight.
     
     Args:
-        triggered_manually: True if triggered manually, False if triggered by timer
+        triggered_manually: True if triggered manually (process only active tenant), 
+                           False if triggered by timer (process all tenants)
     """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    automatic_cash_out = get_setting('automatic_daily_cash_out', True)
-    max_rollover = get_setting('max_rollover_points', 4)
-    
-    # Get all users (tenant-scoped rows include tenant_id)
-    cursor.execute('SELECT tenant_id, user_id, balance FROM tenant_users')
-    users = cursor.fetchall()
+    if triggered_manually:
+        # Manual trigger: only process users for the active tenant using that tenant's settings
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            logger.warning("Manual cash out triggered without tenant context")
+            return
+        
+        # Get settings for this specific tenant
+        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', 
+                      (tenant_id, 'automatic_daily_cash_out', 'max_rollover_points'))
+        settings = cursor.fetchall()
+        settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+        
+        automatic_cash_out = settings_dict.get('automatic_daily_cash_out', '1') == '1'
+        try:
+            max_rollover = int(settings_dict.get('max_rollover_points', '4'))
+        except (ValueError, TypeError):
+            max_rollover = 4
+        
+        # Get users only for this tenant
+        cursor.execute('SELECT tenant_id, user_id, points_balance FROM tenant_users WHERE tenant_id = %s', (tenant_id,))
+        users = cursor.fetchall()
+        
+        # Process users with tenant-specific settings
+        for user in users:
+            tenant_id_row = user.get('tenant_id')
+            user_id = user.get('user_id')
+            balance = user.get('points_balance') or 0
 
-    for user in users:
-        tenant_id_row = user.get('tenant_id')
-        user_id = user.get('user_id')
-        balance = user.get('balance') or 0
+            if automatic_cash_out:
+                # Convert (balance - max_rollover) to cash, keep max_rollover points
+                if balance > max_rollover:
+                    cash_amount = balance // 5
+                    points_to_convert = cash_amount * 5
+                    remainder = balance % 5
+                    rollover = min(max_rollover, remainder)
+                    
+                    # Update cash_balance
+                    cursor.execute('''
+                        UPDATE tenant_users 
+                        SET cash_balance = cash_balance + %s 
+                        WHERE user_id = %s AND tenant_id = %s
+                    ''', (cash_amount, user_id, tenant_id_row))
+                    
+                    # Update point balance to rollover amount
+                    cursor.execute('''
+                        UPDATE tenant_users 
+                        SET points_balance = %s 
+                        WHERE user_id = %s AND tenant_id = %s
+                    ''', (rollover, user_id, tenant_id_row))
+                    
+                    # Create transaction record for the conversion
+                    description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
+                    cursor.execute('''
+                        INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
+                        VALUES (%s, %s, %s, %s, 'points_redemption', %s)
+                    ''', (tenant_id_row, user_id, description, -points_to_convert, get_system_timestamp()))
+            else:
+                # Just cap the balance at max_rollover if it exceeds it
+                if balance > max_rollover:
+                    cursor.execute('''
+                        UPDATE tenant_users 
+                        SET points_balance = %s 
+                        WHERE user_id = %s AND tenant_id = %s
+                    ''', (max_rollover, user_id, tenant_id_row))
+        
+        processed_count = len(users)
+        
+    else:
+        # Automatic trigger: process all users across all tenants, each with their own settings
+        # First get all unique tenants
+        cursor.execute('SELECT DISTINCT tenant_id FROM tenant_users')
+        all_tenants = cursor.fetchall()
+        
+        processed_count = 0
+        
+        for tenant_row in all_tenants:
+            tenant_id = tenant_row.get('tenant_id')
+            
+            # Get settings for this tenant
+            cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', 
+                          (tenant_id, 'automatic_daily_cash_out', 'max_rollover_points'))
+            settings = cursor.fetchall()
+            settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+            
+            automatic_cash_out = settings_dict.get('automatic_daily_cash_out', '1') == '1'
+            try:
+                max_rollover = int(settings_dict.get('max_rollover_points', '4'))
+            except (ValueError, TypeError):
+                max_rollover = 4
+            
+            # Get users for this tenant
+            cursor.execute('SELECT tenant_id, user_id, points_balance FROM tenant_users WHERE tenant_id = %s', (tenant_id,))
+            users = cursor.fetchall()
+            
+            # Process each user with this tenant's settings
+            for user in users:
+                tenant_id_row = user.get('tenant_id')
+                user_id = user.get('user_id')
+                balance = user.get('points_balance') or 0
 
-        if automatic_cash_out:
-            # Convert (balance - max_rollover) to cash, keep max_rollover points
-            if balance > max_rollover:
-                cash_amount = balance // 5
-                points_to_convert = cash_amount * 5
-                remainder = balance % 5
-                rollover = min(max_rollover, remainder)
+                if automatic_cash_out:
+                    # Convert (balance - max_rollover) to cash, keep max_rollover points
+                    if balance > max_rollover:
+                        cash_amount = balance // 5
+                        points_to_convert = cash_amount * 5
+                        remainder = balance % 5
+                        rollover = min(max_rollover, remainder)
+                        
+                        # Update cash_balance
+                        cursor.execute('''
+                            UPDATE tenant_users 
+                            SET cash_balance = cash_balance + %s 
+                            WHERE user_id = %s AND tenant_id = %s
+                        ''', (cash_amount, user_id, tenant_id_row))
+                        
+                        # Update point balance to rollover amount
+                        cursor.execute('''
+                            UPDATE tenant_users 
+                            SET points_balance = %s 
+                            WHERE user_id = %s AND tenant_id = %s
+                        ''', (rollover, user_id, tenant_id_row))
+                        
+                        # Create transaction record for the conversion
+                        description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
+                        cursor.execute('''
+                            INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
+                            VALUES (%s, %s, %s, %s, 'points_redemption', %s)
+                        ''', (tenant_id_row, user_id, description, -points_to_convert, get_system_timestamp()))
+                else:
+                    # Just cap the balance at max_rollover if it exceeds it
+                    if balance > max_rollover:
+                        cursor.execute('''
+                            UPDATE tenant_users 
+                            SET points_balance = %s 
+                            WHERE user_id = %s AND tenant_id = %s
+                        ''', (max_rollover, user_id, tenant_id_row))
                 
-                # Ensure cash_balance record exists (tenant-scoped)
-                cursor.execute('''
-                    INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) 
-                    VALUES (%s, %s, 0.0)
-                    ON CONFLICT (tenant_id, user_id) DO NOTHING
-                ''', (tenant_id_row, user_id))
-                
-                # Update cash_balance
-                cursor.execute('''
-                    UPDATE tenant_cash_balances 
-                    SET cash_balance = cash_balance + %s 
-                    WHERE user_id = %s AND tenant_id = %s
-                ''', (cash_amount, user_id, tenant_id_row))
-                
-                # Update point balance to max_rollover (tenant-scoped)
-                cursor.execute('''
-                    UPDATE tenant_users 
-                    SET balance = %s 
-                    WHERE user_id = %s AND tenant_id = %s
-                ''', (rollover, user_id, tenant_id_row))
-                
-                # Create transaction record for the conversion (tenant-scoped)
-                # Store timestamp in system timezone
-                description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
-                cursor.execute('''
-                    INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
-                    VALUES (%s, %s, %s, %s, 'points_redemption', %s)
-                ''', (tenant_id_row, user_id, description, -points_to_convert, get_system_timestamp()))
-        else:
-            # Just cap the balance at max_rollover if it exceeds it (tenant-scoped)
-            if balance > max_rollover:
-                cursor.execute('''
-                    UPDATE tenant_users 
-                    SET balance = %s 
-                    WHERE user_id = %s AND tenant_id = %s
-                ''', (max_rollover, user_id, tenant_id_row))
+                processed_count += 1
     
     conn.commit()
     cursor.close()
@@ -2959,11 +3028,9 @@ def process_daily_cash_out(triggered_manually=False):
     
     # Log cash out processing
     try:
-        processed_count = len(users)
         trigger_type = 'manual' if triggered_manually else 'automatic (timer)'
         log_system_event('cash_out_run', f'Daily cash out processed for {processed_count} user(s) ({trigger_type})', 
-                        {'user_count': processed_count, 'triggered_manually': triggered_manually, 'trigger_type': trigger_type,
-                         'automatic_cash_out_enabled': automatic_cash_out, 'max_rollover': max_rollover}, 'success')
+                        {'user_count': processed_count, 'triggered_manually': triggered_manually, 'trigger_type': trigger_type}, 'success')
     except Exception:
         pass  # Don't fail if logging fails
     
@@ -3028,7 +3095,7 @@ def record_chore():
         res = cursor.fetchone()
         transaction_id = res['transaction_id'] if res else None
 
-        cursor.execute('UPDATE tenant_users SET balance = balance + %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
+        cursor.execute('UPDATE tenant_users SET points_balance = points_balance + %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
 
         # Get user name for notification/logging (tenant-scoped)
         cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
@@ -3095,14 +3162,14 @@ def redeem_points():
 
     try:
         # Verify user balance (tenant-scoped)
-        cursor.execute('SELECT balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
+        cursor.execute('SELECT points_balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
         user_row = cursor.fetchone()
         if not user_row:
             cursor.close()
             conn.close()
             return jsonify({'error': 'User not found'}), 404
 
-        current_balance = int(user_row.get('balance') or 0)
+        current_balance = int(user_row.get('points_balance') or 0)
         if current_balance < points:
             cursor.close()
             conn.close()
@@ -3115,9 +3182,8 @@ def redeem_points():
                 conn.close()
                 return jsonify({'error': 'Points must be a multiple of 5 to redeem for money (5 points = $1)'}), 400
             cash_amount = points // 5
-            # Ensure cash_balance record exists (tenant-scoped)
-            cursor.execute('INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) VALUES (%s, %s, 0.0) ON CONFLICT (tenant_id, user_id) DO NOTHING', (tenant_id, data['user_id']))
-            cursor.execute('UPDATE tenant_cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s AND tenant_id = %s', (float(cash_amount), data['user_id'], tenant_id))
+            # Update cash_balance in tenant_users
+            cursor.execute('UPDATE tenant_users SET cash_balance = cash_balance + %s WHERE user_id = %s AND tenant_id = %s', (float(cash_amount), data['user_id'], tenant_id))
 
         # Insert transaction (store negative points)
         timestamp = get_system_timestamp()
@@ -3129,7 +3195,7 @@ def redeem_points():
         transaction_id = res['transaction_id'] if res else None
 
         # Subtract points from user balance (tenant-scoped)
-        cursor.execute('UPDATE tenant_users SET balance = balance - %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
+        cursor.execute('UPDATE tenant_users SET points_balance = points_balance - %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
 
         # Get user name for notification/logging
         cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
@@ -3165,195 +3231,283 @@ def redeem_points():
             pass
         return jsonify({'error': f'Error redeeming points: {error_msg}'}), 500
 
-def send_daily_digest_email(force=False):
+def send_daily_digest_email(triggered_manually=False):
     """Generate and send daily digest email with today's history and current balances.
     
     Args:
-        force: If True, send email even if daily digest notification is disabled (for manual sends)
+        triggered_manually: If True, send digest only for active tenant using that tenant's settings.
+                           If False, send digests for all tenants using each tenant's settings.
     """
-    # Check if daily digest is enabled (unless forced)
-    if not force and not get_email_notification_setting('email_notify_daily_digest'):
-        return
+    
     try:
-        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-        if not tenant_id:
-            if force:
-                raise ValueError('No tenant context for daily digest')
-            return
-        # Get parent email addresses
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s, %s, %s)', 
-                  (tenant_id, 'parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
-        results = cursor.fetchall()
-        settings_dict = {row['setting_key']: row['setting_value'] for row in results}
-        
-        parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
-        if not parent_emails_str:
-            cursor.close()
-            conn.close()
-            if force:
-                raise ValueError("No parent email addresses configured")
-            return
-        
-        parent_emails = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
-        if not parent_emails:
-            cursor.close()
-            conn.close()
-            if force:
-                raise ValueError("No parent email addresses configured")
-            return
-        
         # Get yesterday's date in local timezone (since digest triggers at midnight)
         now = datetime.now()
         yesterday = now - timedelta(days=1)
         yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
         yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+        date_str = yesterday.strftime('%B %d, %Y')
         
-        # Get all transactions for yesterday (tenant-scoped)
-        cursor.execute('''
-            SELECT 
-                t.transaction_id,
-                t.user_id,
-                t.description,
-                t.value,
-                t.transaction_type,
-                t.timestamp,
-                u.full_name as user_name
-            FROM tenant_transactions t
-            LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
-            WHERE t.tenant_id = %s AND t.timestamp >= %s AND t.timestamp <= %s
-            ORDER BY t.timestamp DESC
-        ''', (tenant_id, yesterday_start, yesterday_end))
-        transactions = cursor.fetchall()
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        if triggered_manually:
+            # Manual trigger: only process the active tenant using that tenant's settings
+            tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+            if not tenant_id:
+                raise ValueError('No tenant context for daily digest')
+            
+            # Get this tenant's email settings
+            cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s, %s, %s)', 
+                          (tenant_id, 'parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
+            results = cursor.fetchall()
+            settings_dict = {row['setting_key']: row['setting_value'] for row in results}
+            
+            parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
+            if not parent_emails_str:
+                cursor.close()
+                conn.close()
+                raise ValueError("No parent email addresses configured")
+            
+            parent_emails = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
+            if not parent_emails:
+                cursor.close()
+                conn.close()
+                raise ValueError("No parent email addresses configured")
+            
+            # Get transactions and users for this tenant
+            cursor.execute('''
+                SELECT 
+                    t.transaction_id,
+                    t.user_id,
+                    t.description,
+                    t.value,
+                    t.transaction_type,
+                    t.timestamp,
+                    u.full_name as user_name
+                FROM tenant_transactions t
+                LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
+                WHERE t.tenant_id = %s AND t.timestamp >= %s AND t.timestamp <= %s
+                ORDER BY t.timestamp DESC
+            ''', (tenant_id, yesterday_start, yesterday_end))
+            transactions = cursor.fetchall()
 
-        # Get all users with their current balances (tenant-scoped)
-        cursor.execute('''
-            SELECT 
-                u.user_id,
-                u.full_name,
-                u.balance as point_balance,
-                COALESCE(cb.cash_balance, 0.0) as cash_balance
-            FROM tenant_users u
-            LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
-            WHERE u.tenant_id = %s
-            ORDER BY u.user_id
-        ''', (tenant_id,))
-        users = cursor.fetchall()
+            cursor.execute('''
+                SELECT 
+                    u.user_id,
+                    u.full_name,
+                    u.points_balance as point_balance,
+                    u.cash_balance
+                FROM tenant_users u
+                WHERE u.tenant_id = %s
+                ORDER BY u.user_id
+            ''', (tenant_id,))
+            users = cursor.fetchall()
+            
+            cursor.close()
+            conn.close()
+            
+            # Generate and send digest for this tenant
+            _send_digest_for_tenant(parent_emails, transactions, users, date_str, triggered_manually, settings_dict)
         
-        cursor.close()
-        conn.close()
-        
-        # Format transactions for email
-        transactions_html = ""
-        transactions_text = ""
-        if transactions:
-            for t in transactions:
-                transaction_type = t.get('transaction_type', '')
-                value = t.get('value', 0)
-                description = t.get('description', '')
-                user_name = t.get('user_name', 'Unknown')
-                timestamp = t.get('timestamp')
-                
-                if timestamp:
-                    timestamp_aware = make_timezone_aware(timestamp)
-                    time_str = timestamp_aware.strftime('%I:%M %p')
-                else:
-                    time_str = 'N/A'
-                
-                if transaction_type == 'chore_completed':
-                    type_label = "Chore Completed"
-                    value_display = f"+{value} points"
-                elif transaction_type == 'points_redemption':
-                    type_label = "Points Redeemed"
-                    value_display = f"-{abs(value)} points"
-                elif transaction_type == 'cash_withdrawal':
-                    type_label = "Cash Withdrawn"
-                    value_display = f"-${abs(value):.2f}"
-                else:
-                    type_label = "Transaction"
-                    if value >= 0:
-                        value_display = f"+{value} points"
-                    else:
-                        value_display = f"{value} points"
-                
-                transactions_html += f"""
-                <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
-                </tr>
-                """
-                transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
         else:
-            transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions yesterday</td></tr>"
-            transactions_text = "No transactions yesterday\n"
-        
-        # Format user balances
-        balances_html = ""
-        balances_text = ""
-        for user in users:
-            user_name = user.get('full_name', 'Unknown')
-            point_balance = user.get('point_balance', 0) or 0
-            cash_balance = user.get('cash_balance', 0) or 0
-            balances_html += f"""
+            # Automatic trigger: process all tenants with their own settings
+            cursor.execute('SELECT DISTINCT tenant_id FROM tenant_users')
+            all_tenants = cursor.fetchall()
+            cursor.close()
+            
+            for tenant_row in all_tenants:
+                tenant_id = tenant_row.get('tenant_id')
+                
+                # Get this tenant's email settings
+                conn = get_db_connection()
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                
+                # Check if daily digest is enabled for this tenant
+                cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, 'email_notify_daily_digest'))
+                digest_enabled_result = cursor.fetchone()
+                digest_enabled = digest_enabled_result and digest_enabled_result.get('setting_value') == '1'
+                
+                if not digest_enabled:
+                    cursor.close()
+                    conn.close()
+                    continue  # Skip this tenant if daily digest is not enabled
+                
+                cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s, %s, %s)', 
+                              (tenant_id, 'parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
+                results = cursor.fetchall()
+                settings_dict = {row['setting_key']: row['setting_value'] for row in results}
+                
+                parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
+                if not parent_emails_str:
+                    cursor.close()
+                    conn.close()
+                    continue  # Skip this tenant if no emails configured
+                
+                parent_emails = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
+                if not parent_emails:
+                    cursor.close()
+                    conn.close()
+                    continue  # Skip this tenant if no valid emails
+                
+                # Get transactions and users for this tenant
+                cursor.execute('''
+                    SELECT 
+                        t.transaction_id,
+                        t.user_id,
+                        t.description,
+                        t.value,
+                        t.transaction_type,
+                        t.timestamp,
+                        u.full_name as user_name
+                    FROM tenant_transactions t
+                    LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
+                    WHERE t.tenant_id = %s AND t.timestamp >= %s AND t.timestamp <= %s
+                    ORDER BY t.timestamp DESC
+                ''', (tenant_id, yesterday_start, yesterday_end))
+                transactions = cursor.fetchall()
+
+                cursor.execute('''
+                    SELECT 
+                        u.user_id,
+                        u.full_name,
+                        u.points_balance as point_balance,
+                        u.cash_balance
+                    FROM tenant_users u
+                    WHERE u.tenant_id = %s
+                    ORDER BY u.user_id
+                ''', (tenant_id,))
+                users = cursor.fetchall()
+                
+                cursor.close()
+                conn.close()
+                
+                # Generate and send digest for this tenant
+                _send_digest_for_tenant(parent_emails, transactions, users, date_str, triggered_manually, settings_dict)
+    
+    except Exception as e:
+        logger.error(f"Error sending daily digest email: {e}", exc_info=True)
+
+
+def _send_digest_for_tenant(parent_emails, transactions, users, date_str, triggered_manually, settings_dict=None):
+    """Helper function to generate and send digest email for a specific tenant.
+    
+    Args:
+        parent_emails: List of email addresses to send to
+        transactions: Transactions for the tenant
+        users: Users for the tenant
+        date_str: Formatted date string for the email
+        triggered_manually: Whether this was manually triggered
+        settings_dict: Optional pre-fetched email settings dict. If not provided, settings will be fetched from request context.
+    """
+    # Format transactions for email
+    transactions_html = ""
+    transactions_text = ""
+    if transactions:
+        for t in transactions:
+            transaction_type = t.get('transaction_type', '')
+            value = t.get('value', 0)
+            description = t.get('description', '')
+            user_name = t.get('user_name', 'Unknown')
+            timestamp = t.get('timestamp')
+            
+            if timestamp:
+                timestamp_aware = make_timezone_aware(timestamp)
+                time_str = timestamp_aware.strftime('%I:%M %p')
+            else:
+                time_str = 'N/A'
+            
+            if transaction_type == 'chore_completed':
+                type_label = "Chore Completed"
+                value_display = f"+{value} points"
+            elif transaction_type == 'points_redemption':
+                type_label = "Points Redeemed"
+                value_display = f"-{abs(value)} points"
+            elif transaction_type == 'cash_withdrawal':
+                type_label = "Cash Withdrawn"
+                value_display = f"-${abs(value):.2f}"
+            else:
+                type_label = "Transaction"
+                if value >= 0:
+                    value_display = f"+{value} points"
+                else:
+                    value_display = f"{value} points"
+            
+            transactions_html += f"""
             <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
                 <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{point_balance} points</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${cash_balance:.2f}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
             </tr>
             """
-            balances_text += f"{user_name}: {point_balance} points, ${cash_balance:.2f}\n"
-        
-        # Generate email content
-        date_str = yesterday.strftime('%B %d, %Y')
-        subject = f"Family Chores Daily Digest - {date_str}"
-        
-        body_html = f"""
-        <html>
-          <head></head>
-          <body>
-            <h2>Daily Digest - {date_str}</h2>
-            
-            <h3>Yesterday's Activity</h3>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                <thead>
-                    <tr style="background-color: #f5f5f5;">
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
-                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {transactions_html}
-                </tbody>
-            </table>
-            
-            <h3>Current Balances</h3>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                <thead>
-                    <tr style="background-color: #f5f5f5;">
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
-                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Points</th>
-                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Cash</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {balances_html}
-                </tbody>
-            </table>
-            
-            <hr>
-            <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
-          </body>
-        </html>
+            transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
+    else:
+        transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions yesterday</td></tr>"
+        transactions_text = "No transactions yesterday\n"
+    
+    # Format user balances
+    balances_html = ""
+    balances_text = ""
+    for user in users:
+        user_name = user.get('full_name', 'Unknown')
+        point_balance = user.get('point_balance', 0) or 0
+        cash_balance = user.get('cash_balance', 0) or 0
+        balances_html += f"""
+        <tr>
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{point_balance} points</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${cash_balance:.2f}</td>
+        </tr>
         """
+        balances_text += f"{user_name}: {point_balance} points, ${cash_balance:.2f}\n"
+    
+    # Generate email content
+    subject = f"Family Chores Daily Digest - {date_str}"
+    
+    body_html = f"""
+    <html>
+      <head></head>
+      <body>
+        <h2>Daily Digest - {date_str}</h2>
         
-        body_text = f"""Daily Digest - {date_str}
+        <h3>Yesterday's Activity</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background-color: #f5f5f5;">
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                {transactions_html}
+            </tbody>
+        </table>
+        
+        <h3>Current Balances</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background-color: #f5f5f5;">
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Points</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Cash</th>
+                </tr>
+            </thead>
+            <tbody>
+                {balances_html}
+            </tbody>
+        </table>
+        
+        <hr>
+        <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+      </body>
+    </html>
+    """
+    
+    body_text = f"""Daily Digest - {date_str}
 
 Yesterday's Activity:
 {transactions_text}
@@ -3362,26 +3516,23 @@ Current Balances:
 {balances_text}
 
 Sent from Family Chores application
-        """
-        
-        # Send email to all parent addresses
-        success_count = 0
-        error_messages = []
-        for email in parent_emails:
-            success, message = send_email(email, subject, body_html, body_text)
-            if success:
-                logger.info(f"Daily digest email sent to {email}")
-                success_count += 1
-            else:
-                logger.error(f"Failed to send daily digest email to {email}: {message}")
-                error_messages.append(f"{email}: {message}")
-        
-        # If forced (manual send), raise exception if all failed
-        if force and success_count == 0:
-            raise Exception(f"Failed to send daily digest to any address: {'; '.join(error_messages) if error_messages else 'Unknown error'}")
+    """
     
-    except Exception as e:
-        logger.error(f"Error sending daily digest email: {e}", exc_info=True)
+    # Send email to all parent addresses
+    success_count = 0
+    error_messages = []
+    for email in parent_emails:
+        success, message = send_email(email, subject, body_html, body_text, settings_dict=settings_dict)
+        if success:
+            logger.info(f"Daily digest email sent to {email}")
+            success_count += 1
+        else:
+            logger.error(f"Failed to send daily digest email to {email}: {message}")
+            error_messages.append(f"{email}: {message}")
+    
+    # If manual send, raise exception if all failed
+    if triggered_manually and success_count == 0:
+        raise Exception(f"Failed to send daily digest to any address: {'; '.join(error_messages) if error_messages else 'Unknown error'}")
 
 
 
@@ -3397,24 +3548,16 @@ def job_timer():
     
     while True:
         try:
-            # Automatic cash out will always be at midnight
-            cash_out_time_str = '00:00'
-            try:
-                cash_out_hour, cash_out_minute = map(int, cash_out_time_str.split(':'))
-            except (ValueError, AttributeError):
-                # Fallback to midnight if parsing fails
-                        cash_out_hour, cash_out_minute = 0, 0
-                        logger.warning(f"Failed to parse cash out time '{cash_out_time_str}', using midnight (00:00)")
+            # Automatic jobs trigger at midnight
+            trigger_hour = 19
+            trigger_minute = 42
 
             # Get current time in local system timezone
             now = datetime.now()
-            current_date = now.date()
 
             jobs_to_trigger = []
-            if now.hour == cash_out_hour and now.minute == cash_out_minute:
+            if now.hour == trigger_hour and now.minute == trigger_minute:
                 jobs_to_trigger.append("cash_out")
-
-            if now.hour == 0 and now.minute == 0:
                 jobs_to_trigger.append("daily_digest")
 
             if "cash_out" in jobs_to_trigger:
@@ -3423,8 +3566,8 @@ def job_timer():
             if "daily_digest" in jobs_to_trigger:
                 logger.info(f"Sending daily digest email.)")
                 send_daily_digest_email()
-            if not jobs_to_trigger:
-                logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
+            #if not jobs_to_trigger:
+            #    logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
             # Sleep for 1 minute and check again
             time_module.sleep(60)
         except Exception as e:

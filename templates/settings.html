@@ -1268,7 +1268,7 @@
                                 <span style="font-weight: 600; color: #333; font-size: 16px;">${escapeHtml(user.full_name)}</span>
                             </div>
                         </td>
-                        <td class="point-value">${user.balance || 0}</td>
+                        <td class="point-value">${user.points_balance || 0}</td>
                         <td style="color: #4caf50; font-weight: 600;">$${(user.cash_balance || 0).toFixed(2)}</td>
                         <td style="text-align: center;">
                             <button class="btn-delete" onclick="event.stopPropagation(); confirmDeleteUser(${user.user_id}, '${escapeHtml(user.full_name).replace(/'/g, "\\'")}')" title="Delete user">✕</button>
