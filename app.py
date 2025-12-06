@@ -371,6 +371,7 @@ def require_auth_for_everything():
     # Whitelist: index page and the auth endpoints the login page uses
     whitelist = set([
         '/',
+        '/create-tenant',
         '/api/auth/login',
         '/api/auth-check',
         '/api/tenant-login',

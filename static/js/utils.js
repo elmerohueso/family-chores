@@ -59,7 +59,7 @@ async function checkRoleOnLoad() {
         // Server reports no role — clear in-memory role and redirect off protected pages
         setLocalRole(null);
         const pathname = window.location.pathname || '/';
-        if (pathname !== '/dashboard' && pathname !== '/') {
+        if (pathname !== '/dashboard' && pathname !== '/' && pathname !== '/create-tenant') {
             window.location.replace('/dashboard');
         }
     } catch (err) {
