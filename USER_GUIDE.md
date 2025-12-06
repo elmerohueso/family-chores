@@ -9,8 +9,17 @@ Welcome to Family Chores! This guide will help you get started and make the most
 
 1. [Multi-Tenancy](#multi-tenancy)
 2. [Getting Started](#getting-started)
+   - [First Time Setup](#first-time-setup)
+   - [Inviting New Tenants](#inviting-new-tenants)
 3. [Understanding Points and Rewards](#understanding-points-and-rewards)
+   - [Point System](#point-system)
+   - [Redemption Options](#redemption-options)
+   - [Automatic Cash Out](#automatic-cash-out)
+   - [Withdrawing Cash](#withdrawing-cash)
 4. [Settings and Configuration](#settings-and-configuration)
+   - [Accessing Settings](#accessing-settings)
+   - [Key Settings](#key-settings)
+   - [Resetting Data](#resetting-data)
 5. [Typical Usage](#typical-usage)
 6. [Tips and Best Practices](#tips-and-best-practices)
 7. [Troubleshooting](#troubleshooting)
@@ -43,14 +52,39 @@ Family Chores is designed for multi-tenancy. Each family (tenant) has its own us
    - You'll see the home page with a role selection screen
 
 2. **Choose Your Role**
-   - **Parent**: Click "Parent" and enter your PIN
-   - **Kid**: Click "Kid" to access the kid interface
+   - **Parent**: Click "Switch to Parent" and enter your PIN
+   - **Kid**: Click "Switch to Kid" to hide priviledged features
 
 3. **Initial Setup (Parent Only)**
    - Add family members (users)
    - Create chores with point values
    - Configure settings and permissions
 
+---
+### Inviting New Tenants
+
+To add another family (tenant) to your deployment:
+
+1. **Create an Invite Token** (using the PowerShell script):
+   ```powershell
+   ./scripts/create_invite.ps1
+   ```
+   This script will:
+   - Prompt for the server URL (default: localhost:8000)
+   - Read your management key from the `INVITE_CREATION_KEY` environment variable (or prompt)
+   - Optionally ask for creator email, notes, and custom expiration
+   - Generate a single-use invite token and shareable URL
+
+2. **Share the Invite URL** with the family that wants to join
+
+3. **Family Registration**: The new family completes registration by:
+   - Visiting the invite URL (pre-filled with token)
+   - Creating a tenant username (no spaces allowed)
+   - Setting a strong password (12+ characters, must include uppercase, lowercase, numbers, and special characters)
+   - Confirming their password
+   - Setting a 4-digit parent PIN
+
+4. **First Login**: After registration, they'll be redirected to the login page and can log in with their credentials
 
 ---
 

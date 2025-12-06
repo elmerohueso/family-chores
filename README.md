@@ -27,10 +27,8 @@ A web application for managing family chores, points, and rewards using Python a
 
 #### Progressive Web App (PWA)
 - **Install on Any Device**: Add to home screen on iOS/Android or install on desktop (Chrome/Edge)
-- **Offline Support**: Access cached pages when internet is unavailable
 - **App-like Experience**: Runs in standalone mode without browser chrome
 - **Fast Loading**: Aggressive caching for instant subsequent loads
-- **App Shortcuts**: Quick access to Record Chore and Dashboard (on supported devices)
 - See [PWA.md](PWA.md) for installation instructions and technical details
 
 #### CSV Import
@@ -83,6 +81,7 @@ Parents have full control over what kids can access through granular permission 
 - **Backend deletion order**: When deleting a user, their transactions are removed first to avoid foreign-key constraint errors.
 - **Responsive / Mobile support**: Improved handling for narrow displays (phones and small tablets).
 
+## Quick Start
 
 ### Prerequisites
 - Docker
@@ -124,7 +123,9 @@ These variables control application security, database access, multi-tenancy, an
 
 ### Multi-Tenancy and Tenant Creation
 
-The application is designed for multi-tenancy: each family (tenant) has its own isolated data and settings. Tenant creation is protected by a management key (`TENANT_CREATION_KEY`).
+The application is designed for multi-tenancy: each family (tenant) has its own isolated data and settings. Tenant creation uses single-use invite tokens that are protected by a management key (`TENANT_CREATION_KEY`).
+
+#### Generating a Management Key
 
 You can generate a secure tenant creation key using Python:
 ```bash
@@ -133,21 +134,44 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 `secrets.token_urlsafe(48)` produces a URL-safe, high-entropy token (~64 characters).
 
-Use the included PowerShell helper to interactively create a new tenant. The script reads `TENANT_CREATION_KEY` from the environment or from a top-level `.env` file.
+#### Creating Tenant Invites
 
-Interactive usage (recommended):
+Use the included interactive PowerShell script to create invite tokens for new tenants. The script reads `TENANT_CREATION_KEY` from the environment variable or prompts for it.
 
+**Interactive mode (recommended):**
 ```powershell
-./scripts/create_tenant.ps1
+./scripts/create_invite.ps1
 ```
 
-Override the server URL (if different):
+The script will prompt for:
+- **Server URL** (default: `http://localhost:8000`)
+- **Management Key** (reads from `INVITE_CREATION_KEY` env var or prompts)
+- **Creator Email** (optional, for audit trail)
+- **Email Restriction** (optional, restrict invite to specific email)
+- **Notes** (optional, for admin reference)
+- **Custom Expiration** (optional, defaults to 7 days from now)
 
+**Non-interactive mode (for automation):**
 ```powershell
-./scripts/create_tenant.ps1 -Url "http://localhost:8000"
+./scripts/create_invite.ps1 -ManagementKey "your-key-here" -CreatedBy "admin@example.com" -NonInteractive
 ```
 
-Make sure `TENANT_CREATION_KEY` is set before running the script.
+The script outputs:
+- **Token**: Single-use invite token
+- **Shareable URL**: Pre-filled registration link (e.g., `http://localhost:8000/create-tenant?token=xxx`)
+- **Response JSON**: Full invite details (ID, expiration time, etc.)
+
+#### Tenant Registration
+
+New tenants complete registration by:
+1. Visiting the shareable invite URL (or navigating to `/create-tenant`)
+2. Entering the invite token (pre-filled if using shareable URL)
+3. Choosing a unique tenant name (username, no spaces)
+4. Setting a strong password (12+ chars, must include uppercase, lowercase, numbers, special characters)
+5. Confirming the password
+6. Setting a 4-digit parent PIN for future logins
+
+After registration, the new tenant is redirected to the login page. All session data is cleared to ensure a fresh start.
 
 
 
@@ -155,6 +179,7 @@ Make sure `TENANT_CREATION_KEY` is set before running the script.
 - `db_data`: PostgreSQL data directory
 - `avatar_data`: User avatar images
 - `backup_data`: Database backups
+- `syslog_data`: System event logs
 
 ---
 

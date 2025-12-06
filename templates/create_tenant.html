@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include '_head_includes.html' %}
+    <title>Join Family Chores</title>
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-sm">
+        <div class="card" style="margin-top: 40px;">
+            <h1>Join Family Chores</h1>
+
+            <form id="createTenantForm">
+                <div class="form-group">
+                    <label for="inviteToken" class="label-form">Invite Token</label>
+                    <input 
+                        type="text" 
+                        id="inviteToken" 
+                        class="form-input" 
+                        placeholder="Enter your invite token" 
+                        required 
+                        autocomplete="off"
+                    />
+                    <div class="help-text">Required to register</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tenantName" class="label-form">Username</label>
+                    <input 
+                        type="text" 
+                        id="tenantName" 
+                        class="form-input" 
+                        placeholder="e.g., SmithFamily" 
+                        required 
+                        autocomplete="off"
+                    />
+                    <div class="help-text">No spaces allowed</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="password" class="label-form">Password</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        class="form-input" 
+                        placeholder="Enter a strong password" 
+                        required 
+                        autocomplete="new-password"
+                    />
+                    <div class="help-text">Minimum 12 characters, must include uppercase, lowercase, numbers, and special characters</div>
+                    <div class="password-strength-meter" id="passwordStrength" style="margin-top: 8px; display: none;">
+                        <div class="strength-bar" style="background: #e0e0e0; height: 4px; border-radius: 2px; overflow: hidden;">
+                            <div class="strength-fill" id="strengthFill" style="height: 100%; width: 0%; background: #dc3545; transition: width 0.3s, background-color 0.3s;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword" class="label-form">Confirm Password</label>
+                    <input 
+                        type="password" 
+                        id="confirmPassword" 
+                        class="form-input" 
+                        placeholder="Re-enter your password" 
+                        required 
+                        autocomplete="new-password"
+                    />
+                    <div class="help-text">Passwords must match</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="parentPin" class="label-form">Parent PIN *</label>
+                    <input 
+                        type="text" 
+                        id="parentPin" 
+                        class="form-input" 
+                        placeholder="1234" 
+                        maxlength="4" 
+                        pattern="\d{4}" 
+                        required 
+                        autocomplete="off"
+                    />
+                    <div class="help-text">Must be exactly 4 digits (e.g., 1234)</div>
+                </div>
+
+                <button type="submit" class="btn btn-white-on-purple btn-md" id="submitBtn" style="width: 100%; margin-top: 20px;">
+                    <span id="buttonText">Register</span>
+                </button>
+            </form>
+
+            <div style="text-align: center; margin: 20px 0; color: #ccc; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">or</div>
+
+            <div style="text-align: center;">
+                <p>Already have a tenant? <a href="/" style="color: #667eea; text-decoration: none; font-weight: 600;">Log in here</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('createTenantForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const buttonText = document.getElementById('buttonText');
+
+        function showToast(message, isError = false) {
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'error' : 'success'} show`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Pre-fill invite token from URL if provided
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+            if (token) {
+                document.getElementById('inviteToken').value = token;
+            }
+        });
+
+        // Strong password validation function
+        function validatePassword(password) {
+            const requirements = {
+                length: password.length >= 12,
+                uppercase: /[A-Z]/.test(password),
+                lowercase: /[a-z]/.test(password),
+                numbers: /[0-9]/.test(password),
+                special: /[!@#$%^&*()_+\-=\[\]{};:'"",.<>?/\\|`~]/.test(password)
+            };
+            return requirements;
+        }
+
+        function isPasswordStrong(password) {
+            const reqs = validatePassword(password);
+            return Object.values(reqs).every(req => req === true);
+        }
+
+        function getPasswordStrengthColor(password) {
+            const reqs = validatePassword(password);
+            const metRequirements = Object.values(reqs).filter(r => r).length;
+            
+            if (metRequirements < 3) return '#dc3545'; // Red
+            if (metRequirements < 4) return '#ff9800'; // Orange
+            if (metRequirements < 5) return '#ffc107'; // Yellow
+            return '#4caf50'; // Green
+        }
+
+        function updatePasswordStrength() {
+            const password = document.getElementById('password').value;
+            const strengthMeter = document.getElementById('passwordStrength');
+            const strengthFill = document.getElementById('strengthFill');
+            
+            if (password.length === 0) {
+                strengthMeter.style.display = 'none';
+                return;
+            }
+            
+            strengthMeter.style.display = 'block';
+            
+            const reqs = validatePassword(password);
+            const metRequirements = Object.values(reqs).filter(r => r).length;
+            const percentage = (metRequirements / 5) * 100;
+            
+            strengthFill.style.width = percentage + '%';
+            strengthFill.style.backgroundColor = getPasswordStrengthColor(password);
+        }
+
+        document.getElementById('password').addEventListener('input', updatePasswordStrength);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const inviteToken = document.getElementById('inviteToken').value.trim();
+            const tenantName = document.getElementById('tenantName').value.trim();
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const parentPin = document.getElementById('parentPin').value.trim();
+
+            // Validate PIN is 4 digits
+            if (!/^\d{4}$/.test(parentPin)) {
+                showToast('Parent PIN must be exactly 4 digits', true);
+                return;
+            }
+
+            // Validate tenant name (no spaces)
+            if (/\s/.test(tenantName)) {
+                showToast('Tenant name must not contain spaces or whitespace', true);
+                return;
+            }
+
+            // Validate password strength
+            if (!isPasswordStrong(password)) {
+                const reqs = validatePassword(password);
+                const missing = [];
+                if (!reqs.length) missing.push('at least 12 characters');
+                if (!reqs.uppercase) missing.push('uppercase letter');
+                if (!reqs.lowercase) missing.push('lowercase letter');
+                if (!reqs.numbers) missing.push('number');
+                if (!reqs.special) missing.push('special character');
+                showToast('Password must contain: ' + missing.join(', '), true);
+                return;
+            }
+
+            // Validate passwords match
+            if (password !== confirmPassword) {
+                showToast('Passwords do not match', true);
+                return;
+            }
+
+            if (!inviteToken || !tenantName || !password || !parentPin) {
+                showToast('All fields are required', true);
+                return;
+            }
+
+            // Disable button and show loading state
+            submitBtn.disabled = true;
+            buttonText.innerHTML = '<span class="loading-spinner"></span>Creating...';
+
+            try {
+                const response = await fetch('/api/tenants', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        tenant_name: tenantName,
+                        password: password,
+                        parent_pin: parentPin,
+                        invite_token: inviteToken
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showToast(data.error || 'Failed to create tenant', true);
+                    return;
+                }
+
+                // Success - clear any existing session data
+                sessionStorage.clear();
+                localStorage.clear();
+                
+                showToast(`Tenant "${tenantName}" created successfully! Redirecting to login...`);
+                
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+
+            } catch (error) {
+                showToast(`Error: ${error.message}`, true);
+            } finally {
+                submitBtn.disabled = false;
+                buttonText.textContent = 'Register';
+            }
+        });
+    </script>
+</body>
+</html>

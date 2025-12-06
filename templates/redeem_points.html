@@ -125,7 +125,7 @@
             
             if (points > 0 && points % 5 === 0 && selectedRedemptionType && userId) {
                 const user = users.find(u => u.user_id == userId);
-                if (user && points <= (user.balance || 0)) {
+                if (user && points <= (user.points_balance || 0)) {
                     document.getElementById('pointsPreviewValue').textContent = `${points} points`;
                     
                     let redemptionText = '';
@@ -157,7 +157,7 @@
                              points % 5 === 0 && 
                              selectedRedemptionType && 
                              user && 
-                             points <= (user.balance || 0);
+                             points <= (user.points_balance || 0);
             
             document.getElementById('submitBtn').disabled = !canSubmit;
         }
@@ -172,7 +172,7 @@
                 users.forEach(user => {
                     const option = document.createElement('option');
                     option.value = user.user_id;
-                    option.textContent = `${user.full_name} (Balance: ${user.balance || 0} points)`;
+                    option.textContent = `${user.full_name} (Balance: ${user.points_balance || 0} points)`;
                     userSelect.appendChild(option);
                 });
 
@@ -191,7 +191,7 @@
                 selectedUser = users.find(u => u.user_id == userId);
                 if (selectedUser) {
                     const balanceDiv = document.getElementById('userBalance');
-                    balanceDiv.textContent = `Current balance: ${selectedUser.balance || 0} points`;
+                    balanceDiv.textContent = `Current balance: ${selectedUser.points_balance || 0} points`;
                     balanceDiv.style.display = 'block';
                 }
             } else {
@@ -244,8 +244,8 @@
                 return;
             }
 
-            if (points > (user.balance || 0)) {
-                showMessage('Insufficient points. User only has ' + (user.balance || 0) + ' points.', true);
+            if (points > (user.points_balance || 0)) {
+                showMessage('Insufficient points. User only has ' + (user.points_balance || 0) + ' points.', true);
                 submitBtn.disabled = false;
                 return;
             }
@@ -279,7 +279,7 @@
                         redemptionText = `$${dollars.toFixed(2)}`;
                         redemptionTypeText = 'Money';
                     }
-                    const newBalancePreview = user ? (user.balance || 0) - points : null;
+                    const newBalancePreview = user ? (user.points_balance || 0) - points : null;
                     if (userRole === 'kid') {
                         showConfirmation(user, points, redemptionText, redemptionTypeText);
                     } else {
@@ -306,7 +306,7 @@
             
             messageDiv.textContent = `${user.full_name} successfully redeemed ${points} points!`;
             
-            const newBalance = (user.balance || 0) - points;
+            const newBalance = (user.points_balance || 0) - points;
             detailsDiv.innerHTML = `
                 <div class="confirmation-detail-item">
                     <span class="confirmation-detail-value">Redemption Type:</span>

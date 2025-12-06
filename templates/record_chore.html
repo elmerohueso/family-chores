@@ -80,7 +80,7 @@
             
             messageDiv.textContent = `${user.full_name} successfully completed "${chore.chore}"!`;
             
-            const newBalance = (user.balance || 0) + points;
+            const newBalance = (user.points_balance || 0) + points;
             detailsDiv.innerHTML = `
                 <div class="confirmation-detail-item">
                     <span class="confirmation-detail-value">Chore:</span>
@@ -128,7 +128,7 @@
                 users.forEach(user => {
                     const option = document.createElement('option');
                     option.value = user.user_id;
-                    option.textContent = `${user.full_name} (Balance: ${user.balance || 0} points)`;
+                    option.textContent = `${user.full_name} (Balance: ${user.points_balance || 0} points)`;
                     userSelect.appendChild(option);
                 });
 
@@ -321,7 +321,7 @@
                 const user = users.find(u => u.user_id == userId);
                 if (user) {
                     const balanceDiv = document.getElementById('userBalance');
-                    balanceDiv.textContent = `Current balance: ${user.balance || 0} points`;
+                    balanceDiv.textContent = `Current balance: ${user.points_balance || 0} points`;
                     balanceDiv.style.display = 'block';
                 }
             } else {
@@ -406,7 +406,7 @@
                     const user = users.find(u => u.user_id == data.user_id);
                     const chore = chores.find(c => c.chore_id == data.chore_id);
                     if (user && chore) {
-                        const newBalance = (user.balance || 0) + data.value;
+                        const newBalance = (user.points_balance || 0) + data.value;
                         if (userRole === 'kid') {
                             showConfirmation(user, chore, data.value);
                         } else {

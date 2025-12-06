@@ -30,6 +30,7 @@ services:
     volumes:
       - avatar_data:/data/avatars
       - backup_data:/data/backups
+      - syslog_data:/data/syslogs
     environment:
       - FLASK_ENV=development
       - SECRET_KEY=dev-secret-key-change-in-production
@@ -42,9 +43,8 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       # Parent PIN for the initial tenant
       - PARENT_PIN=${PARENT_PIN}
-      # Management key to allow creating tenants via management API.
-      # If empty or unset tenant creation endpoint is disabled.
-      - TENANT_CREATION_KEY=${TENANT_CREATION_KEY}
+      # Management key to create invite tokens
+      - INVITE_CREATION_KEY=${INVITE_CREATION_KEY}
       # Valid timezone values: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
       - TZ=America/Denver
       # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
@@ -68,3 +68,4 @@ volumes:
   db_data:
   avatar_data:
   backup_data:
+  syslog_data:

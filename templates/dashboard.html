@@ -17,10 +17,12 @@
                 </div>
             </div>
             <div class="header-nav">
-                <div></div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button class="btn-white-on-opaque" id="choreListBtn" onclick="window.location.href='/chores'">Chore List</button>
+                </div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
                     <a href="/settings" class="settings-link" id="settingsLink" title="Settings">⚙️</a>
-                    <button class="btn-logout" id="logoutBtn" onclick="roleLogout()" title="Logout">Select Role</button>
+                    <button class="btn-white-on-opaque" id="logoutBtn" onclick="handleLogoutBtnClick()" title="Change Role">Change Role</button>
                 </div>
             </div>
         </header>
@@ -37,31 +39,23 @@
                     <div class="empty-state-text">No users found. Add your first family member from Settings!</div>
                 </div>
             </div>
-            <div style="text-align: center; width: 100%; margin-top: 20px;">
-                <a href="/chores" class="btn btn-white-on-purple" style="margin: 12px auto 0;">Chore List</a>
-            </div>
         </div>
 
     </div>
 
     <!-- Role Selection Modal -->
-    <div id="roleSelectionOverlay" class="overlay overlay-dark">
+    <div id="parentPinOverlay" class="overlay overlay-dark">
         <div class="overlay-content">
-            <div class="text-title">Welcome!</div>
-            <div class="text-body text-body-lg">Are you a Kid or a Parent?</div>
-            <div class="role-buttons">
-                <button class="btn-white-on-purple" id="parentBtn" onclick="showPinInput()">Parent</button>
-                <button class="btn-white-on-pink" id="kidBtn" onclick="selectRole('kid')">Kid</button>
-            </div>
+            <div class="text-title">Enter Parent PIN</div>
+            
             <div class="pin-input-section" id="pinInputSection">
                 <div class="pin-input-group">
-                    <label for="pinInput" class="label-form label-form-bold">Enter Parent PIN:</label>
                     <input type="tel" id="pinInput" class="form-input form-input-pin" placeholder="----" maxlength="4" autocomplete="off" inputmode="numeric" pattern="[0-9]*" style="-webkit-text-security: disc;">
                     <div id="pinError" class="pin-error">Invalid PIN. Please try again.</div>
                 </div>
                 <div class="role-buttons">
                     <button class="btn-white-on-purple" id="submitPinBtn" onclick="validatePinAndLogin()">Login</button>
-                    <button class="btn-gray-on-cream" onclick="hidePinInput()" style="background: #f5f5f5; color: #333;">Cancel</button>
+                    <button class="btn-gray-on-cream" onclick="closePinOverlay()" style="background: #f5f5f5; color: #333;">Cancel</button>
                 </div>
             </div>
         </div>
@@ -106,12 +100,14 @@
             document.getElementById('kidBtn').disabled = true;
         }
 
-        function hidePinInput() {
+     
+
+        function closePinOverlay() {
+            document.getElementById('parentPinOverlay').classList.remove('show');
+            document.getElementById('parentPinOverlay').classList.add('hidden');
             document.getElementById('pinInputSection').classList.remove('show');
             document.getElementById('pinInput').value = '';
             document.getElementById('pinError').classList.remove('show');
-            document.getElementById('parentBtn').disabled = false;
-            document.getElementById('kidBtn').disabled = false;
         }
 
         async function validatePinAndLogin() {
@@ -151,10 +147,11 @@
                 setLocalRole(role);
                 // Reload permissions in case settings changed
                 permissions = await getPermissions();
-                const roleOverlay = document.getElementById('roleSelectionOverlay');
+                const roleOverlay = document.getElementById('parentPinOverlay');
                 roleOverlay.classList.remove('show');
                 roleOverlay.classList.add('hidden');
                 applyRoleRestrictions();
+                updateLogoutBtnText();
                 // Load users after role is set to apply restrictions
                 loadUsers();
                 loadAppFooter();
@@ -164,6 +161,35 @@
         }
 
         // logout is now defined in static/js/utils.js
+
+        function handleLogoutBtnClick() {
+            const role = getRole();
+            if (role === 'kid') {
+                // Show parent PIN prompt
+                document.getElementById('pinInput').value = '';
+                document.getElementById('pinError').classList.remove('show');
+                document.getElementById('submitPinBtn').disabled = false;
+                document.getElementById('submitPinBtn').textContent = 'Login';
+                document.getElementById('parentPinOverlay').classList.remove('hidden');
+                document.getElementById('parentPinOverlay').classList.add('show');
+                showPinInput();
+            } else if (role === 'parent') {
+                // Switch to kid role
+                selectRole('kid');
+            }
+        }
+
+        function updateLogoutBtnText() {
+            const role = getRole();
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) {
+                if (role === 'kid') {
+                    logoutBtn.textContent = 'Switch to Parent Mode';
+                } else if (role === 'parent') {
+                    logoutBtn.textContent = 'Switch to Kid Mode';
+                }
+            }
+        }
 
         function applyRoleRestrictions() {
             const role = getRole();
@@ -222,13 +248,13 @@
             
             const role = getRole();
             if (!role) {
-                // Show role selection modal - wait for user to select
-                document.getElementById('roleSelectionOverlay').classList.remove('hidden');
-                    document.getElementById('roleSelectionOverlay').classList.add('show');
+                // Auto-set role to kid if not already set
+                await selectRole('kid');
             } else {
                 userRole = role;
-                document.getElementById('roleSelectionOverlay').classList.add('hidden');
+                document.getElementById('parentPinOverlay').classList.add('hidden');
                 applyRoleRestrictions();
+                updateLogoutBtnText();
                 loadUsers();
             }
 
@@ -282,7 +308,7 @@
                                 )
                             }
                             <div class="user-name" style="position: relative; z-index: 2;">${escapeHtml(user.full_name)}</div>
-                            <div class="balance points" style="position: relative; z-index: 2;">${user.balance || 0}</div>
+                            <div class="balance points" style="position: relative; z-index: 2;">${user.points_balance || 0}</div>
                             <div class="label-sm" style="position: relative; z-index: 2;">Points Balance</div>
                             <div class="balance cash" style="position: relative; z-index: 2;">$${(user.cash_balance || 0).toFixed(2)}</div>
                             <div class="label-sm" style="position: relative; z-index: 2;">Cash Balance</div>
