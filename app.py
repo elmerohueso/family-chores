@@ -2751,7 +2751,7 @@ Sent from Family Chores application
 def send_daily_digest_manual():
     """Manually trigger sending of daily digest email."""
     try:
-        send_daily_digest_email(force=True)
+        send_daily_digest_email(triggered_manually=True)
         return jsonify({'message': 'Daily digest email sent successfully'}), 200
     except Exception as e:
         error_msg = str(e)
@@ -2877,60 +2877,153 @@ def process_daily_cash_out(triggered_manually=False):
     """Process daily cash out for all users at midnight.
     
     Args:
-        triggered_manually: True if triggered manually, False if triggered by timer
+        triggered_manually: True if triggered manually (process only active tenant), 
+                           False if triggered by timer (process all tenants)
     """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    automatic_cash_out = get_setting('automatic_daily_cash_out', True)
-    max_rollover = get_setting('max_rollover_points', 4)
-    
-    # Get all users (tenant-scoped rows include tenant_id)
-    cursor.execute('SELECT tenant_id, user_id, points_balance FROM tenant_users')
-    users = cursor.fetchall()
+    if triggered_manually:
+        # Manual trigger: only process users for the active tenant using that tenant's settings
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            logger.warning("Manual cash out triggered without tenant context")
+            return
+        
+        # Get settings for this specific tenant
+        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', 
+                      (tenant_id, 'automatic_daily_cash_out', 'max_rollover_points'))
+        settings = cursor.fetchall()
+        settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+        
+        automatic_cash_out = settings_dict.get('automatic_daily_cash_out', '1') == '1'
+        try:
+            max_rollover = int(settings_dict.get('max_rollover_points', '4'))
+        except (ValueError, TypeError):
+            max_rollover = 4
+        
+        # Get users only for this tenant
+        cursor.execute('SELECT tenant_id, user_id, points_balance FROM tenant_users WHERE tenant_id = %s', (tenant_id,))
+        users = cursor.fetchall()
+        
+        # Process users with tenant-specific settings
+        for user in users:
+            tenant_id_row = user.get('tenant_id')
+            user_id = user.get('user_id')
+            balance = user.get('points_balance') or 0
 
-    for user in users:
-        tenant_id_row = user.get('tenant_id')
-        user_id = user.get('user_id')
-        balance = user.get('points_balance') or 0
+            if automatic_cash_out:
+                # Convert (balance - max_rollover) to cash, keep max_rollover points
+                if balance > max_rollover:
+                    cash_amount = balance // 5
+                    points_to_convert = cash_amount * 5
+                    remainder = balance % 5
+                    rollover = min(max_rollover, remainder)
+                    
+                    # Update cash_balance
+                    cursor.execute('''
+                        UPDATE tenant_users 
+                        SET cash_balance = cash_balance + %s 
+                        WHERE user_id = %s AND tenant_id = %s
+                    ''', (cash_amount, user_id, tenant_id_row))
+                    
+                    # Update point balance to rollover amount
+                    cursor.execute('''
+                        UPDATE tenant_users 
+                        SET points_balance = %s 
+                        WHERE user_id = %s AND tenant_id = %s
+                    ''', (rollover, user_id, tenant_id_row))
+                    
+                    # Create transaction record for the conversion
+                    description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
+                    cursor.execute('''
+                        INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
+                        VALUES (%s, %s, %s, %s, 'points_redemption', %s)
+                    ''', (tenant_id_row, user_id, description, -points_to_convert, get_system_timestamp()))
+            else:
+                # Just cap the balance at max_rollover if it exceeds it
+                if balance > max_rollover:
+                    cursor.execute('''
+                        UPDATE tenant_users 
+                        SET points_balance = %s 
+                        WHERE user_id = %s AND tenant_id = %s
+                    ''', (max_rollover, user_id, tenant_id_row))
+        
+        processed_count = len(users)
+        
+    else:
+        # Automatic trigger: process all users across all tenants, each with their own settings
+        # First get all unique tenants
+        cursor.execute('SELECT DISTINCT tenant_id FROM tenant_users')
+        all_tenants = cursor.fetchall()
+        
+        processed_count = 0
+        
+        for tenant_row in all_tenants:
+            tenant_id = tenant_row.get('tenant_id')
+            
+            # Get settings for this tenant
+            cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', 
+                          (tenant_id, 'automatic_daily_cash_out', 'max_rollover_points'))
+            settings = cursor.fetchall()
+            settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+            
+            automatic_cash_out = settings_dict.get('automatic_daily_cash_out', '1') == '1'
+            try:
+                max_rollover = int(settings_dict.get('max_rollover_points', '4'))
+            except (ValueError, TypeError):
+                max_rollover = 4
+            
+            # Get users for this tenant
+            cursor.execute('SELECT tenant_id, user_id, points_balance FROM tenant_users WHERE tenant_id = %s', (tenant_id,))
+            users = cursor.fetchall()
+            
+            # Process each user with this tenant's settings
+            for user in users:
+                tenant_id_row = user.get('tenant_id')
+                user_id = user.get('user_id')
+                balance = user.get('points_balance') or 0
 
-        if automatic_cash_out:
-            # Convert (balance - max_rollover) to cash, keep max_rollover points
-            if balance > max_rollover:
-                cash_amount = balance // 5
-                points_to_convert = cash_amount * 5
-                remainder = balance % 5
-                rollover = min(max_rollover, remainder)
+                if automatic_cash_out:
+                    # Convert (balance - max_rollover) to cash, keep max_rollover points
+                    if balance > max_rollover:
+                        cash_amount = balance // 5
+                        points_to_convert = cash_amount * 5
+                        remainder = balance % 5
+                        rollover = min(max_rollover, remainder)
+                        
+                        # Update cash_balance
+                        cursor.execute('''
+                            UPDATE tenant_users 
+                            SET cash_balance = cash_balance + %s 
+                            WHERE user_id = %s AND tenant_id = %s
+                        ''', (cash_amount, user_id, tenant_id_row))
+                        
+                        # Update point balance to rollover amount
+                        cursor.execute('''
+                            UPDATE tenant_users 
+                            SET points_balance = %s 
+                            WHERE user_id = %s AND tenant_id = %s
+                        ''', (rollover, user_id, tenant_id_row))
+                        
+                        # Create transaction record for the conversion
+                        description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
+                        cursor.execute('''
+                            INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
+                            VALUES (%s, %s, %s, %s, 'points_redemption', %s)
+                        ''', (tenant_id_row, user_id, description, -points_to_convert, get_system_timestamp()))
+                else:
+                    # Just cap the balance at max_rollover if it exceeds it
+                    if balance > max_rollover:
+                        cursor.execute('''
+                            UPDATE tenant_users 
+                            SET points_balance = %s 
+                            WHERE user_id = %s AND tenant_id = %s
+                        ''', (max_rollover, user_id, tenant_id_row))
                 
-                # Update cash_balance
-                cursor.execute('''
-                    UPDATE tenant_users 
-                    SET cash_balance = cash_balance + %s 
-                    WHERE user_id = %s AND tenant_id = %s
-                ''', (cash_amount, user_id, tenant_id_row))
-                
-                # Update point balance to max_rollover (tenant-scoped)
-                cursor.execute('''
-                    UPDATE tenant_users 
-                    SET points_balance = %s 
-                    WHERE user_id = %s AND tenant_id = %s
-                ''', (rollover, user_id, tenant_id_row))
-                
-                # Create transaction record for the conversion (tenant-scoped)
-                # Store timestamp in system timezone
-                description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
-                cursor.execute('''
-                    INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
-                    VALUES (%s, %s, %s, %s, 'points_redemption', %s)
-                ''', (tenant_id_row, user_id, description, -points_to_convert, get_system_timestamp()))
-        else:
-            # Just cap the balance at max_rollover if it exceeds it (tenant-scoped)
-            if balance > max_rollover:
-                cursor.execute('''
-                    UPDATE tenant_users 
-                    SET points_balance = %s 
-                    WHERE user_id = %s AND tenant_id = %s
-                ''', (max_rollover, user_id, tenant_id_row))
+                processed_count += 1
     
     conn.commit()
     cursor.close()
@@ -2938,11 +3031,9 @@ def process_daily_cash_out(triggered_manually=False):
     
     # Log cash out processing
     try:
-        processed_count = len(users)
         trigger_type = 'manual' if triggered_manually else 'automatic (timer)'
         log_system_event('cash_out_run', f'Daily cash out processed for {processed_count} user(s) ({trigger_type})', 
-                        {'user_count': processed_count, 'triggered_manually': triggered_manually, 'trigger_type': trigger_type,
-                         'automatic_cash_out_enabled': automatic_cash_out, 'max_rollover': max_rollover}, 'success')
+                        {'user_count': processed_count, 'triggered_manually': triggered_manually, 'trigger_type': trigger_type}, 'success')
     except Exception:
         pass  # Don't fail if logging fails
     
@@ -3143,19 +3234,19 @@ def redeem_points():
             pass
         return jsonify({'error': f'Error redeeming points: {error_msg}'}), 500
 
-def send_daily_digest_email(force=False):
+def send_daily_digest_email(triggered_manually=False):
     """Generate and send daily digest email with today's history and current balances.
     
     Args:
         force: If True, send email even if daily digest notification is disabled (for manual sends)
     """
     # Check if daily digest is enabled (unless forced)
-    if not force and not get_email_notification_setting('email_notify_daily_digest'):
+    if not triggered_manually and not get_email_notification_setting('email_notify_daily_digest'):
         return
     try:
         tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
         if not tenant_id:
-            if force:
+            if triggered_manually:
                 raise ValueError('No tenant context for daily digest')
             return
         # Get parent email addresses
@@ -3170,7 +3261,7 @@ def send_daily_digest_email(force=False):
         if not parent_emails_str:
             cursor.close()
             conn.close()
-            if force:
+            if triggered_manually:
                 raise ValueError("No parent email addresses configured")
             return
         
@@ -3178,7 +3269,7 @@ def send_daily_digest_email(force=False):
         if not parent_emails:
             cursor.close()
             conn.close()
-            if force:
+            if triggered_manually:
                 raise ValueError("No parent email addresses configured")
             return
         
@@ -3354,7 +3445,7 @@ Sent from Family Chores application
                 error_messages.append(f"{email}: {message}")
         
         # If forced (manual send), raise exception if all failed
-        if force and success_count == 0:
+        if triggered_manually and success_count == 0:
             raise Exception(f"Failed to send daily digest to any address: {'; '.join(error_messages) if error_messages else 'Unknown error'}")
     
     except Exception as e:
@@ -3375,8 +3466,8 @@ def job_timer():
     while True:
         try:
             # Automatic jobs trigger at midnight
-            trigger_hour = 16
-            trigger_minute = 52
+            trigger_hour = 18
+            trigger_minute = 30
 
             # Get current time in local system timezone
             now = datetime.now()
