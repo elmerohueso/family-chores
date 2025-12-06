@@ -12,8 +12,7 @@ on:
       - ".dockerignore"
       - "docker-compose.yml"
       - "docker-compose-dev.yml"
-      - "README.md"
-      - "USER_GUIDE.md"
+      - "*.md"
 
 jobs:
   build:
