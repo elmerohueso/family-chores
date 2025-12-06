@@ -1013,10 +1013,12 @@ def api_create_invite():
 
         # Extract invite creation parameters
         expires_at = data.get('expires_at')
-        max_uses = data.get('max_uses') or 1
         allowed_email = data.get('allowed_email')
         notes = data.get('notes')
         created_by = data.get('created_by')
+        
+        # All invites are single-use only
+        max_uses = 1
 
         # Generate a secure token
         token = secrets.token_urlsafe(48)

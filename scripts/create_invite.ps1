@@ -18,7 +18,6 @@ Notes:
 param(
     [string]$Url = 'http://localhost:8000',
     [string]$ManagementKey = '',
-    [int]$MaxUses = 1,
     [string]$ExpiresAt = '',
     [string]$AllowedEmail = '',
     [string]$Notes = '',
@@ -36,7 +35,7 @@ if (-not $ManagementKey -or $ManagementKey -eq '') {
     exit 1
 }
 
-$bodyHash = @{ max_uses = $MaxUses }
+$bodyHash = @{}
 if ($ExpiresAt -and $ExpiresAt -ne '') { $bodyHash['expires_at'] = $ExpiresAt }
 if ($AllowedEmail -and $AllowedEmail -ne '') { $bodyHash['allowed_email'] = $AllowedEmail }
 if ($Notes -and $Notes -ne '') { $bodyHash['notes'] = $Notes }
@@ -47,7 +46,7 @@ $body = $bodyHash | ConvertTo-Json
 $uri = ($Url.TrimEnd('/')) + '/api/tenants/invites'
 
 Write-Host "POST $uri" -ForegroundColor Cyan
-Write-Host "MaxUses: $MaxUses  AllowedEmail: $AllowedEmail  CreatedBy: $CreatedBy" -ForegroundColor Gray
+Write-Host "Single-use invite  AllowedEmail: $AllowedEmail  CreatedBy: $CreatedBy" -ForegroundColor Gray
 try {
     $resp = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json' -Headers @{ 'X-Invite-Creation-Key' = $ManagementKey } -ErrorAction Stop
     Write-Host "Invite created successfully:`n" -ForegroundColor Green
