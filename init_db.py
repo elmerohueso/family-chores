@@ -49,12 +49,50 @@ def create_tenants_table(cursor):
             tenant_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_name VARCHAR(255) NOT NULL UNIQUE,
             tenant_password VARCHAR(1000) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-               , admin_email VARCHAR(255)
-               , email_verified BOOLEAN DEFAULT FALSE
-               , verification_token VARCHAR(255)
-               , token_expires_at TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            tenant_email VARCHAR(255),
+            email_verified BOOLEAN DEFAULT FALSE,
+            verification_token VARCHAR(255),
+            token_expires_at TIMESTAMP
         )
+    """)
+
+
+def ensure_tenant_email_columns(cursor):
+    """Idempotently add email verification columns to tenants when missing."""
+    cursor.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'tenants' AND column_name = 'tenant_email'
+            ) THEN
+                ALTER TABLE tenants ADD COLUMN tenant_email VARCHAR(255);
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'tenants' AND column_name = 'email_verified'
+            ) THEN
+                ALTER TABLE tenants ADD COLUMN email_verified BOOLEAN DEFAULT FALSE;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'tenants' AND column_name = 'verification_token'
+            ) THEN
+                ALTER TABLE tenants ADD COLUMN verification_token VARCHAR(255);
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'tenants' AND column_name = 'token_expires_at'
+            ) THEN
+                ALTER TABLE tenants ADD COLUMN token_expires_at TIMESTAMP;
+            END IF;
+        EXCEPTION WHEN others THEN
+            -- Continue without failing init if alteration fails
+            NULL;
+        END $$;
     """)
 
 
@@ -633,6 +671,9 @@ def init_database():
         create_tenant_transactions_table(cursor)
         create_tenant_roles_table(cursor)
         create_tenant_invites_table(cursor)
+
+        # Ensure email verification columns exist on tenants for older databases
+        ensure_tenant_email_columns(cursor)
 
         # Create an initial tenant if none exist
         cursor.execute("SELECT COUNT(*) FROM tenants")
