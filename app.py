@@ -64,7 +64,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-producti
 
 # Application version
 
-__version__ = '2.3.1'
+__version__ = '2.3.2'
 
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
@@ -3325,6 +3325,9 @@ def record_chore():
         transaction_id = res['transaction_id'] if res else None
 
         cursor.execute('UPDATE tenant_users SET points_balance = points_balance + %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
+
+        # Track when this chore was last completed
+        cursor.execute('UPDATE tenant_chores SET last_completed = %s WHERE chore_id = %s AND tenant_id = %s', (timestamp, chore_id, tenant_id))
 
         # Get user name for notification/logging (tenant-scoped)
         cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
