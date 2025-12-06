@@ -181,6 +181,27 @@ def create_tenant_roles_table(cursor):
         )
     """)
 
+def create_tenant_invites_table(cursor):
+    """Create a tenant-scoped invites table to support one-time invite tokens.
+
+    Idempotent: safe to run multiple times. Uses `gen_random_uuid()` for
+    invite_id when `pgcrypto` is available; otherwise the database must
+    provide a UUID default or the application can insert tokens explicitly.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_invites (
+            invite_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            token TEXT NOT NULL UNIQUE,
+            created_by VARCHAR(255),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+            expires_at TIMESTAMP WITH TIME ZONE,
+            max_uses INTEGER DEFAULT 1,
+            uses INTEGER DEFAULT 0,
+            allowed_email VARCHAR(255),
+            notes TEXT
+        )
+    """)
+
 
 def create_default_admin_if_missing(cursor):
     """Inserts the first tenant. This also migrates any existing
@@ -607,6 +628,7 @@ def init_database():
         create_tenant_cash_balances_table(cursor)
         create_tenant_transactions_table(cursor)
         create_tenant_roles_table(cursor)
+        create_tenant_invites_table(cursor)
 
         # Create an initial tenant if none exist
         cursor.execute("SELECT COUNT(*) FROM tenants")

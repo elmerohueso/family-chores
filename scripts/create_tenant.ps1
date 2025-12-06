@@ -2,75 +2,45 @@
 Creates a tenant by calling POST /api/tenants on the FamilyChores server.
 
 Behavior:
- - Reads TENANT_CREATION_KEY from environment or from a top-level `.env` file.
+ - Requires an invite token to create a tenant (invite-only).
  - Prompts for tenant name and password (password read securely).
- - Sends JSON { tenant_name, password } with header `X-Tenant-Creation-Key`.
+ - Sends JSON { tenant_name, password, parent_pin, invite_token } to server.
 
 Usage examples:
-  # interactive
-  .\scripts\create_tenant.ps1
+  # interactive (prompts for tenant name, password, parent PIN)
+  .\scripts\create_tenant.ps1 -InviteToken "eyJhbGc..."
 
-  # non-interactive (insecure password on command line)
-  .\scripts\create_tenant.ps1 -TenantName "acme-family" -Password "Secur3Pass!"
+  # non-interactive
+  .\scripts\create_tenant.ps1 -TenantName "acme-family" -Password "Secur3Pass!" -InviteToken "eyJhbGc..."
 
   # override server URL
-  .\scripts\create_tenant.ps1 -Url "http://localhost:8000"
+  .\scripts\create_tenant.ps1 -Url "https://myserver.com" -InviteToken "eyJhbGc..."
 
 Notes:
- - Make sure TENANT_CREATION_KEY is set in the environment or present in `.env` at the repo root.
- - Do not commit secrets to source control.
+ - Invite token is required. Get one from an admin using create_invite.ps1.
 #>
 
 param(
     [string]$Url = 'http://localhost:8000',
-    [string]$ParentPin = ''
+    [string]$ParentPin = '',
+    [string]$TenantName = '',
+    [string]$Password = '',
+    [string]$InviteToken = ''
 )
 
-function Read-EnvFile([string]$path) {
-    if (-not (Test-Path $path)) { return @{} }
-    $pairs = @{}
-    foreach ($line in Get-Content $path -ErrorAction SilentlyContinue) {
-        $trim = $line.Trim()
-        if ($trim -eq '' -or $trim.StartsWith('#')) { continue }
-        # split on first = only
-        $idx = $trim.IndexOf('=')
-        if ($idx -lt 0) { continue }
-        $k = $trim.Substring(0,$idx).Trim()
-        $v = $trim.Substring($idx+1).Trim()
-        # Remove surrounding quotes if present
-        if (($v.StartsWith('"') -and $v.EndsWith('"')) -or ($v.StartsWith("'") -and $v.EndsWith("'"))) {
-            $v = $v.Substring(1,$v.Length-2)
-        }
-        $pairs[$k] = $v
+# 1) Require invite token
+if (-not $InviteToken -or $InviteToken -eq '') {
+    Write-Error "InviteToken is required (invite-only tenant creation)"
+    exit 1
+}
+
+# 2) Tenant name and password (interactive if not provided)
+if (-not $TenantName -or $TenantName -eq '') {
+    $TenantName = Read-Host "Tenant name"
+    if (-not $TenantName) {
+        Write-Error "tenant name is required"
+        exit 3
     }
-    return $pairs
-}
-
-# 1) Locate management key
-$key = $env:TENANT_CREATION_KEY
-if (-not $key -or $key -eq '') {
-    # Try to find .env in repo root relative to script location
-    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-    $repoRoot = Resolve-Path (Join-Path $scriptDir "..")
-    $envPath = Join-Path $repoRoot '.env'
-    if (-not (Test-Path $envPath)) {
-        # Also check current directory as fallback
-        $envPath = Join-Path (Get-Location) '.env'
-    }
-    $envVars = Read-EnvFile $envPath
-    if ($envVars.ContainsKey('TENANT_CREATION_KEY')) { $key = $envVars['TENANT_CREATION_KEY'] }
-}
-
-if (-not $key -or $key -eq '') {
-    Write-Error "TENANT_CREATION_KEY not found in environment or .env. Set the env var or add TENANT_CREATION_KEY to .env to enable tenant creation."
-    exit 2
-}
-
-# 2) Prompt for tenant name and password (interactive)
-$TenantName = Read-Host "Tenant name"
-if (-not $TenantName) {
-    Write-Error "tenant name is required"
-    exit 3
 }
 # Disallow whitespace in tenant name
 if ($TenantName -match '\s') {
@@ -78,15 +48,15 @@ if ($TenantName -match '\s') {
     exit 7
 }
 
-# 3) Get password (secure)
-function ConvertTo-PlainText([System.Security.SecureString]$ss) {
-    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($ss)
-    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
-    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+if (-not $Password -or $Password -eq '') {
+    function ConvertTo-PlainText([System.Security.SecureString]$ss) {
+        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($ss)
+        try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+    }
+    $secure = Read-Host -AsSecureString "Password (input hidden)"
+    $Password = ConvertTo-PlainText $secure
 }
-
-$secure = Read-Host -AsSecureString "Password (input hidden)"
-$Password = ConvertTo-PlainText $secure
 
 # 3b) Prompt for Parent PIN (required 4-digit). Allow a few attempts.
 if (-not $ParentPin -or $ParentPin -eq '') {
@@ -108,17 +78,17 @@ if (-not $ParentPin -or $ParentPin -eq '') {
     }
 }
 
-# 4) Build JSON body (include tenant-scoped parent_pin)
-$body = @{ tenant_name = $TenantName; password = $Password; parent_pin = $ParentPin } | ConvertTo-Json
+# 4) Build JSON body (include tenant-scoped parent_pin and invite_token)
+$bodyHash = @{ tenant_name = $TenantName; password = $Password; parent_pin = $ParentPin; invite_token = $InviteToken }
+$body = $bodyHash | ConvertTo-Json
 
-# 5) Send request
-$headers = @{ 'X-Tenant-Creation-Key' = $key }
+# 5) Send request (no headers needed, invite token in body)
 $uri = ($Url.TrimEnd('/')) + '/api/tenants'
 
 Write-Host "POST $uri" -ForegroundColor Cyan
-Write-Host "Tenant: $TenantName  ParentPin: **** (masked)" -ForegroundColor Gray
+Write-Host "Tenant: $TenantName  ParentPin: **** (masked)  InviteToken: **** (masked)" -ForegroundColor Gray
 try {
-    $resp = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json' -Headers $headers -ErrorAction Stop
+    $resp = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json' -ErrorAction Stop
     Write-Host "Tenant created successfully:`n" -ForegroundColor Green
     $resp | ConvertTo-Json -Depth 5 | Write-Host
     exit 0

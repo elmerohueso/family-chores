@@ -371,6 +371,7 @@ def require_auth_for_everything():
         '/api/auth/refresh',
         '/api/auth/logout',
         '/api/tenants',
+        '/api/tenants/invites',  # Allow invite creation with management key (no auth required)
         # Allow a few read-only endpoints used by head/includes and utils
         '/api/version',
         '/api/system-time',
@@ -726,35 +727,78 @@ def api_tenant_login():
 
 @app.route('/api/tenants', methods=['POST'])
 def api_create_tenant():
-    """Create a new tenant (management API).
+    """Create a new tenant via invite token (invite-only).
 
-    Protection: requires header `X-Tenant-Creation-Key` to match the
-    `TENANT_CREATION_KEY` environment variable. If that env var is not set
-    tenant-creation is disabled.
-
-    Expects JSON: { "tenant_name": "...", "password": "...", "parent_pin": "<4-digit>" }
+    Requires a valid invite token in the JSON body.
+    Expects JSON: { "tenant_name": "...", "password": "...", "parent_pin": "<4-digit>", "invite_token": "..." }
     Returns: { "tenant_id": "<uuid>" }
     """
-    # Management key must be configured in the environment
-    mgmt_key = os.environ.get('TENANT_CREATION_KEY')
-    if not mgmt_key:
-        return jsonify({'error': 'Tenant creation is disabled on this server'}), 403
-
-    provided = request.headers.get('X-Tenant-Creation-Key')
-    if not provided or provided != mgmt_key:
-        try:
-            log_system_event('tenant_create_forbidden', 'Attempt to create tenant without valid management key', None, 'error')
-        except Exception:
-            pass
-        return jsonify({'error': 'Forbidden'}), 403
-
-    # Parse JSON body
+    # Parse JSON body early
     if not request.is_json:
         return jsonify({'error': 'Expected JSON body'}), 400
     data = request.get_json(force=True) or {}
     tenant_name = (data.get('tenant_name') or '').strip()
     password = data.get('password') or ''
     parent_pin = (data.get('parent_pin') or '').strip()
+    invite_token = (data.get('invite_token') or '').strip()
+
+    # Require invite token (no management key fallback)
+    if not invite_token:
+        try:
+            log_system_event('tenant_create_forbidden', 'Attempt to create tenant without invite token', None, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': 'Invite token required'}), 403
+
+    invite_row = None
+    conn = None
+    cur = None
+    # Validate invite token
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('''
+            SELECT invite_id, expires_at, max_uses, uses, allowed_email
+            FROM tenant_invites WHERE token = %s
+        ''', (invite_token,))
+        row = cur.fetchone()
+        if not row:
+            try:
+                log_system_event('tenant_create_invalid_invite', 'Invalid invite token used', None, 'error')
+            except Exception:
+                pass
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Invalid invite token'}), 403
+
+        invite_id, expires_at, max_uses, uses, allowed_email = row
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        if expires_at and expires_at < now:
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Invite token expired'}), 403
+        if max_uses is not None and uses is not None and uses >= max_uses:
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Invite token already used'}), 403
+
+        # Optionally enforce allowed_email here (not implemented; placeholder)
+        invite_row = {
+            'invite_id': invite_id,
+            'token': invite_token,
+            'expires_at': expires_at,
+            'max_uses': max_uses,
+            'uses': uses,
+            'allowed_email': allowed_email
+        }
+    except Exception as e:
+        try:
+            log_system_event('tenant_create_error', f'Error validating invite token: {e}', None, 'error')
+        except Exception:
+            pass
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Error validating invite token'}), 500
 
     # Disallow whitespace in tenant name (prevent spaces, tabs, etc.)
     if any(ch.isspace() for ch in tenant_name):
@@ -771,8 +815,10 @@ def api_create_tenant():
     if ph is None:
         return jsonify({'error': 'Server misconfigured: password hasher unavailable'}), 500
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+    # Use existing DB connection if invite validation already opened one, else create a new connection
+    if conn is None:
+        conn = get_db_connection()
+        cur = conn.cursor()
     try:
         # Prevent duplicate tenant names (case-insensitive)
         cur.execute("SELECT tenant_id FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (tenant_name,))
@@ -842,6 +888,17 @@ def api_create_tenant():
         except Exception:
             pass
 
+        # If invite-based creation, increment invite uses (mark as used)
+        try:
+            if invite_row and cur is not None:
+                cur.execute('UPDATE tenant_invites SET uses = uses + 1 WHERE invite_id = %s', (invite_row['invite_id'],))
+                conn.commit()
+        except Exception:
+            try:
+                log_system_event('tenant_create_warn', 'Failed to update invite usage count', {'tenant_id': str(tenant_id)}, 'error')
+            except Exception:
+                pass
+
         return jsonify({'tenant_id': str(tenant_id)}), 201
     except Exception as e:
         error_msg = str(e)
@@ -910,6 +967,7 @@ def api_change_tenant_password():
         resp.set_cookie('refresh_token', '', expires=0)
         resp.set_cookie('tenant_id', '', expires=0)
         return resp, 200
+
     except Exception as e:
         conn.rollback()
         try:
@@ -922,6 +980,168 @@ def api_change_tenant_password():
         conn.close()
 
 
+@app.route('/api/tenants/invites', methods=['POST'])
+def api_create_invite():
+        """Create a new invite token (requires management key).
+
+        Expects JSON or header: management key can be provided as X-Tenant-Creation-Key header or management_key in JSON body.
+        Expects JSON: { expires_at: ISO8601 (optional), max_uses: int (optional), allowed_email: str (optional), notes: str (optional), created_by: str (optional) }
+        Returns: { invite_id, token, expires_at, max_uses }
+        """
+        # Get management key from environment
+        mgmt_key = os.environ.get('INVITE_CREATION_KEY')
+        if not mgmt_key:
+            return jsonify({'error': 'Invite creation is disabled'}), 403
+
+        # Accept management key from either header or JSON body
+        provided_key = request.headers.get('X-Invite-Creation-Key') or ''
+        if not provided_key and request.is_json:
+            data = request.get_json(force=True) or {}
+            provided_key = data.get('management_key', '').strip()
+
+        if not provided_key or provided_key != mgmt_key:
+            try:
+                log_system_event('invite_create_forbidden', 'Attempt to create invite without valid management key', None, 'error')
+            except Exception:
+                pass
+            return jsonify({'error': 'Invalid or missing management key'}), 403
+
+        # Parse JSON body for invite parameters
+        if not request.is_json:
+            return jsonify({'error': 'Expected JSON body'}), 400
+        data = request.get_json(force=True) or {}
+
+        # Extract invite creation parameters
+        expires_at = data.get('expires_at')
+        max_uses = data.get('max_uses') or 1
+        allowed_email = data.get('allowed_email')
+        notes = data.get('notes')
+        created_by = data.get('created_by')
+
+        # Generate a secure token
+        token = secrets.token_urlsafe(48)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute('''
+                INSERT INTO tenant_invites (token, created_by, expires_at, max_uses, uses, allowed_email, notes)
+                VALUES (%s, %s, %s, %s, 0, %s, %s) RETURNING invite_id, created_at
+            ''', (token, created_by, expires_at, max_uses, allowed_email, notes))
+            row = cur.fetchone()
+            conn.commit()
+            invite_id, created_at = row
+            try:
+                log_system_event('invite_created', 'Tenant invite created', {'invite_id': str(invite_id), 'created_by': created_by}, 'success')
+            except Exception:
+                pass
+            return jsonify({'invite_id': str(invite_id), 'token': token, 'expires_at': created_at.isoformat() if created_at else None, 'max_uses': max_uses}), 201
+        except Exception as e:
+            conn.rollback()
+            try:
+                log_system_event('invite_create_error', f'Error creating invite: {e}', None, 'error')
+            except Exception:
+                pass
+            return jsonify({'error': f'Error creating invite: {e}'}), 500
+        finally:
+            cur.close()
+            conn.close()
+
+
+@app.route('/api/tenants/invites', methods=['GET'])
+def api_list_invites():
+        """List all invite tokens (requires admin invite token)."""
+        if not request.is_json:
+            return jsonify({'error': 'Expected JSON body'}), 400
+        data = request.get_json(force=True) or {}
+        admin_invite_token = data.get('admin_invite_token', '').strip()
+
+        if not admin_invite_token:
+            return jsonify({'error': 'admin_invite_token required'}), 403
+
+        # Validate admin token exists
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute('SELECT 1 FROM tenant_invites WHERE token = %s LIMIT 1', (admin_invite_token,))
+            if not cur.fetchone():
+                cur.close()
+                conn.close()
+                return jsonify({'error': 'Invalid admin token'}), 403
+
+            cur.execute('SELECT invite_id, token, created_by, created_at, expires_at, max_uses, uses, allowed_email, notes FROM tenant_invites ORDER BY created_at DESC')
+            rows = cur.fetchall()
+            invites = []
+            for r in rows:
+                invite_id, token, created_by, created_at, expires_at, max_uses, uses, allowed_email, notes = r
+                invites.append({
+                    'invite_id': str(invite_id),
+                    'token': token,
+                    'created_by': created_by,
+                    'created_at': created_at.isoformat() if created_at else None,
+                    'expires_at': expires_at.isoformat() if expires_at else None,
+                    'max_uses': max_uses,
+                    'uses': uses,
+                    'allowed_email': allowed_email,
+                    'notes': notes
+                })
+            cur.close()
+            conn.close()
+            return jsonify(invites), 200
+        except Exception as e:
+            try:
+                log_system_event('invite_list_error', f'Error listing invites: {e}', None, 'error')
+            except Exception:
+                pass
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Error listing invites'}), 500
+
+
+@app.route('/api/tenants/invites/<invite_id>', methods=['DELETE'])
+def api_delete_invite(invite_id):
+        """Delete an invite token (requires admin invite token)."""
+        if not request.is_json:
+            return jsonify({'error': 'Expected JSON body'}), 400
+        data = request.get_json(force=True) or {}
+        admin_invite_token = data.get('admin_invite_token', '').strip()
+
+        if not admin_invite_token:
+            return jsonify({'error': 'admin_invite_token required'}), 403
+
+        # Validate admin token exists
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute('SELECT 1 FROM tenant_invites WHERE token = %s LIMIT 1', (admin_invite_token,))
+            if not cur.fetchone():
+                cur.close()
+                conn.close()
+                return jsonify({'error': 'Invalid admin token'}), 403
+
+            cur.execute('DELETE FROM tenant_invites WHERE invite_id = %s RETURNING invite_id', (invite_id,))
+            row = cur.fetchone()
+            if not row:
+                cur.close()
+                conn.close()
+                return jsonify({'error': 'Invite not found'}), 404
+            conn.commit()
+            try:
+                log_system_event('invite_deleted', f'Invite deleted: {invite_id}', None, 'success')
+            except Exception:
+                pass
+            cur.close()
+            conn.close()
+            return jsonify({'deleted': str(row[0])}), 200
+        except Exception as e:
+            conn.rollback()
+            try:
+                log_system_event('invite_delete_error', f'Error deleting invite: {e}', None, 'error')
+            except Exception:
+                pass
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'Error deleting invite'}), 500
 @app.route('/api/auth-check', methods=['GET'])
 def api_auth_check():
     """Validate current authentication state.
