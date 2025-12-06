@@ -8,7 +8,7 @@ A web application for managing family chores, points, and rewards using Python a
 
 ## Features
 
-- **Progressive Web App (PWA)**: Install on mobile and desktop devices for app-like experience with offline support
+- **Progressive Web App (PWA)**: Install on mobile and desktop devices for app-like experience
 - **Multi-Tenancy**: Host multiple independent families (tenants) in a single deployment. Each tenant's data is strictly isolated. Tenant creation is protected by a management key.
 - **User Management**: Add and delete family members with customizable avatars
 - **Chore Tracking**: Create, edit, and delete chores with point values and repeat intervals
@@ -29,7 +29,7 @@ A web application for managing family chores, points, and rewards using Python a
 - **Install on Any Device**: Add to home screen on iOS/Android or install on desktop (Chrome/Edge)
 - **App-like Experience**: Runs in standalone mode without browser chrome
 - **Fast Loading**: Aggressive caching for instant subsequent loads
-- See [PWA.md](PWA.md) for installation instructions and technical details
+- See [INSTALL_PWA.md](INSTALL_PWA.md) for installation instructions
 
 #### CSV Import
 - Import multiple chores at once via CSV file
@@ -70,16 +70,6 @@ A web application for managing family chores, points, and rewards using Python a
 
 ## User Roles
 Parents have full control over what kids can access through granular permission settings.
-- Can manage users, chores, and settings
-- Can record chores, redeem points, and withdraw cash
-
-### New / Recent Improvements
-- **Progressive Web App (PWA)**: Family Chores can now be installed as a standalone app on mobile and desktop devices with offline support. See [PWA.md](PWA.md) for details.
-- **CSV Export (Parent)**: Parents can now export the chores list (from the Chores page) and transaction history (History page) to CSV with a column-selection dialog. Exports respect any active filters.
-- **Standardized toasts**: High-level system and network messages are shown via top-center toasts for consistent feedback across pages.
-- **Layout tweak**: User cards on the Home page now use a Flexbox-based layout to stay centered (especially for 1–2 users).
-- **Backend deletion order**: When deleting a user, their transactions are removed first to avoid foreign-key constraint errors.
-- **Responsive / Mobile support**: Improved handling for narrow displays (phones and small tablets).
 
 ## Quick Start
 

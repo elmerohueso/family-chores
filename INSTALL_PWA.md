@@ -1,5 +1,7 @@
 # Quick PWA Installation Guide
 
+**Note:** PWA requires HTTPS connection (use a reverse proxy). Works on localhost for development.
+
 ## Mobile Devices
 
 ### iPhone/iPad (iOS)
@@ -35,10 +37,8 @@
 ## Benefits of Installing
 
 ✓ **Faster access** - Launch directly from home screen/desktop  
-✓ **Works offline** - View cached pages without internet  
 ✓ **No browser clutter** - Runs in standalone window  
 ✓ **Native feel** - Looks and behaves like a regular app  
-✓ **Quick shortcuts** - Jump directly to Record Chore or Dashboard  
 
 ## Uninstalling
 
@@ -51,7 +51,3 @@
 - **Browser**: Settings → Apps → Find Family Chores → **"Uninstall"**
 
 ---
-
-**Note:** PWA requires HTTPS connection. Works on localhost for development.
-
-For technical details and troubleshooting, see [PWA.md](PWA.md)
