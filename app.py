@@ -3397,24 +3397,16 @@ def job_timer():
     
     while True:
         try:
-            # Automatic cash out will always be at midnight
-            cash_out_time_str = '00:00'
-            try:
-                cash_out_hour, cash_out_minute = map(int, cash_out_time_str.split(':'))
-            except (ValueError, AttributeError):
-                # Fallback to midnight if parsing fails
-                        cash_out_hour, cash_out_minute = 0, 0
-                        logger.warning(f"Failed to parse cash out time '{cash_out_time_str}', using midnight (00:00)")
+            # Automatic jobs trigger at midnight
+            trigger_hour = 16
+            trigger_minute = 52
 
             # Get current time in local system timezone
             now = datetime.now()
-            current_date = now.date()
 
             jobs_to_trigger = []
-            if now.hour == cash_out_hour and now.minute == cash_out_minute:
+            if now.hour == trigger_hour and now.minute == trigger_minute:
                 jobs_to_trigger.append("cash_out")
-
-            if now.hour == 0 and now.minute == 0:
                 jobs_to_trigger.append("daily_digest")
 
             if "cash_out" in jobs_to_trigger:

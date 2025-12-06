@@ -411,6 +411,64 @@ def create_default_admin_if_missing(cursor):
     except Exception as e:
         print(f'Warning: failed to migrate kid permissions into tenant_roles for tenant {tenant_id}: {e}')
     
+def cash_balance_to_tenant_users(cursor):
+           # Migration: Consolidate tenant_users.balance → points_balance and add cash_balance column
+        cursor.execute("""
+            DO $$ BEGIN
+                -- Step 1: Rename tenant_users.balance to tenant_users.points_balance (if balance exists)
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='tenant_users' AND column_name='balance'
+                ) THEN
+                    ALTER TABLE tenant_users RENAME COLUMN balance TO points_balance;
+                END IF;
+            EXCEPTION WHEN OTHERS THEN
+                -- Column may already be renamed or table may not exist
+                NULL;
+            END $$;
+        """)
+
+        cursor.execute("""
+            DO $$ BEGIN
+                -- Step 2: Add cash_balance column to tenant_users if it doesn't exist
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='tenant_users' AND column_name='cash_balance'
+                ) THEN
+                    ALTER TABLE tenant_users ADD COLUMN cash_balance DOUBLE PRECISION DEFAULT 0.0;
+                END IF;
+            EXCEPTION WHEN OTHERS THEN
+                -- Column may already exist
+                NULL;
+            END $$;
+        """)
+
+        cursor.execute("""
+            DO $$ BEGIN
+                -- Step 3: Migrate cash_balance values from tenant_cash_balances to tenant_users
+                -- This assumes tenant_cash_balances table still exists
+                UPDATE tenant_users tu
+                SET cash_balance = tcb.cash_balance
+                FROM tenant_cash_balances tcb
+                WHERE tu.user_id = tcb.user_id AND tu.tenant_id = tcb.tenant_id
+                AND tu.cash_balance = 0.0;
+            EXCEPTION WHEN undefined_table THEN
+                -- tenant_cash_balances table doesn't exist, skip migration
+                NULL;
+            END $$;
+        """)
+
+        cursor.execute("""
+            DO $$ BEGIN
+                -- Step 4: Drop tenant_cash_balances table if it exists
+                DROP TABLE IF EXISTS tenant_cash_balances;
+            EXCEPTION WHEN OTHERS THEN
+                -- Table may not exist or other error
+                NULL;
+            END $$;
+        """)
+
+def drop_legacy_tables(cursor):
     # Drop foreign key constraints that reference the legacy tables, then drop the legacy tables themselves.
     try:
         legacy_tables = ['user', 'chores', 'settings', 'cash_balances', 'transactions', 'system_log']
@@ -467,13 +525,7 @@ def create_default_admin_if_missing(cursor):
     except Exception as e:
         print(f'Warning: error while removing legacy tables/constraints: {e}')
 
-
-def init_database():
-    """Create the original database schema matching the provided SQL dump."""
-    conn = psycopg2.connect(DATABASE_URL)
-    try:
-        cursor = conn.cursor()
-
+def create_initial_tables(cursor):
         # Original `user` table (named "user" in the dump)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS "user" (
@@ -539,6 +591,13 @@ def init_database():
             )
         """)
 
+def init_database():
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        cursor = conn.cursor()
+   
+        create_initial_tables(cursor)
+        
         # Create tenants and related tables via helper functions
         create_tenants_table(cursor)
         create_tenant_settings_table(cursor)
@@ -554,6 +613,14 @@ def init_database():
         tenant_count = cursor.fetchone()[0]
         if tenant_count == 0:
             create_default_admin_if_missing(cursor)
+
+        # Migrate cash_balance into tenant_users table
+        cash_balance_to_tenant_users(cursor)
+
+        # Drop legacy tables after migration
+        drop_legacy_tables(cursor)
+
+
 
         conn.commit()
     finally:
