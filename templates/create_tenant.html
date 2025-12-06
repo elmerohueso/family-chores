@@ -236,17 +236,11 @@
             buttonText.innerHTML = '<span class="loading-spinner"></span>Creating...';
 
             try {
-                const response = await fetch('/api/tenants', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        tenant_name: tenantName,
-                        password: password,
-                        parent_pin: parentPin,
-                        invite_token: inviteToken
-                    })
+                const response = await createTenant({
+                    tenant_name: tenantName,
+                    password: password,
+                    parent_pin: parentPin,
+                    invite_token: inviteToken
                 });
 
                 const data = await response.json();

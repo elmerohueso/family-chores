@@ -642,6 +642,31 @@ async function authLogin(username, password) {
 }
 
 /**
+ * Create a new tenant (register).
+ * @param {Object} data - Tenant registration data
+ * @param {string} data.tenant_name - Tenant username
+ * @param {string} data.password - Tenant password
+ * @param {string} data.parent_pin - 4-digit parent PIN
+ * @param {string} data.invite_token - Registration invite token
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function createTenant(data) {
+    try {
+        const response = await fetch('/api/tenants', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error creating tenant:', error);
+        throw error;
+    }
+}
+
+/**
  * Safely escape text for HTML insertion
  * @param {string} text - Raw text to escape
  * @returns {string} Escaped HTML string
