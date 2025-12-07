@@ -83,8 +83,12 @@ DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST
 AVATAR_DIR = '/data/avatars'
 os.makedirs(AVATAR_DIR, exist_ok=True)
 
-# Parent PIN from environment variable
-PARENT_PIN = os.environ.get('PARENT_PIN', '1234')
+# Get SMTP settings from environment variables
+smtp_server = os.environ.get('SMTP_SERVER', '').strip()
+smtp_port = os.environ.get('SMTP_PORT', '587').strip()
+smtp_username = os.environ.get('SMTP_USERNAME', '').strip()
+smtp_password = os.environ.get('SMTP_PASSWORD', '').strip()
+smtp_sender_name = os.environ.get('SMTP_SENDER_NAME', 'Family Chores').strip()
 
 # Email password encryption key (derived from app secret key)
 def get_encryption_key():
@@ -449,33 +453,27 @@ def validate_pin():
     """Validate parent PIN."""
     data = request.get_json()
     pin = data.get('pin', '')
-    # Prefer parent PIN stored in the settings table when available.
+    # Use only tenant-scoped parent PIN from settings table
     db_pin = None
     tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    
+    if not tenant_id:
+        # No tenant context - reject
+        return jsonify({'valid': False, 'error': 'No tenant context'}), 401
+    
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        # Try tenant-scoped parent PIN first
-        if tenant_id:
-            try:
-                cur.execute("SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s", (tenant_id, 'parent_pin'))
-                row = cur.fetchone()
-                if row and row.get('setting_value') is not None:
-                    raw_val = str(row.get('setting_value'))
-                    try_decrypted = decrypt_password(raw_val)
-                    if try_decrypted and try_decrypted.isdigit():
-                        db_pin = try_decrypted
-                    elif raw_val.isdigit():
-                        db_pin = raw_val
-            except Exception:
-                # Continue to fallback to global setting or env var
-                db_pin = None
-
-        # Do not fall back to global settings; tenant-scoped only
-        if db_pin is None:
-            db_pin = None
+        cur.execute("SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s", (tenant_id, 'parent_pin'))
+        row = cur.fetchone()
+        if row and row.get('setting_value') is not None:
+            raw_val = str(row.get('setting_value'))
+            try_decrypted = decrypt_password(raw_val)
+            if try_decrypted and try_decrypted.isdigit():
+                db_pin = try_decrypted
+            elif raw_val.isdigit():
+                db_pin = raw_val
     except Exception:
-        # Don't fail validation if DB read fails; fall back to env var below
         db_pin = None
     finally:
         try:
@@ -487,9 +485,16 @@ def validate_pin():
         except Exception:
             pass
 
-    effective_pin = db_pin if db_pin else PARENT_PIN
+    # If no tenant-scoped PIN is found, reject authentication
+    if not db_pin:
+        # Log failed parent login attempt (no PIN configured)
+        try:
+            log_system_event('login_failed', 'Failed parent login attempt', {'role': 'parent', 'reason': 'No PIN configured for tenant'}, 'error')
+        except Exception:
+            pass
+        return jsonify({'valid': False, 'error': 'PIN not configured'}), 401
 
-    if pin == effective_pin:
+    if pin == db_pin:
         session['user_role'] = 'parent'
         
         # Log successful parent login
@@ -3046,13 +3051,7 @@ This link will expire in 24 hours.
 If you did not create this account, please ignore this email.
     """
     
-    # Try to get SMTP settings from environment variables or system defaults
-    # This allows sending verification emails without requiring tenant settings
-    smtp_server = os.environ.get('SMTP_SERVER', '').strip()
-    smtp_port = os.environ.get('SMTP_PORT', '587').strip()
-    smtp_username = os.environ.get('SMTP_USERNAME', '').strip()
-    smtp_password = os.environ.get('SMTP_PASSWORD', '').strip()
-    smtp_sender_name = os.environ.get('SMTP_SENDER_NAME', 'Family Chores').strip()
+
     
     # If environment variables not set, try to fetch from first tenant's settings as fallback
     if not all([smtp_server, smtp_username, smtp_password]):
