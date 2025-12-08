@@ -22,42 +22,32 @@
                 <div id="message" class="message"></div>
 
                 <form id="settingsForm">
-                    <div class="setting-item">
-                        <div class="setting-label">
-                            <span class="text-title-sm">Parent PIN</span>
-                        </div>
+                    <div class="setting-group">
+                        <span class="setting-title">Parent PIN</span>
                         <div class="text-body">
                             4-digit PIN used for parent login. Leave empty to keep existing.
                         </div>
                         <div class="input-group" style="margin-top: 12px;">
                             <input type="tel" id="parentPin" class="form-input" minlength="4" maxlength="4" pattern="\d{4}" title="Enter exactly 4 digits (leave empty to keep existing)" inputmode="numeric" style="width: 140px;">
+                        
                         </div>
                     </div>
-                    <div class="setting-item">
-                        <div class="setting-label">
-                            <span class="text-title-sm">Automatic Daily Cash Out</span>
+                    <div class="setting-group">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                            <span class="setting-title">Automatic Daily Cash Out</span>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="automaticDailyCashOut">
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
                         <div class="text-body">
-                            <div class="text-body">
-                                When enabled, excess points (above Max Rollover Points) are automatically converted to cash at midnight at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
-
-                                <div style="margin-top:8px; color:#444;">
-                                    Timezone used for scheduled daily cash-out:
-                                    <strong id="tzDisplay">Loading timezone...</strong>
-                                    <!-- TZ loader script moved to the main <script> block at the bottom of the page -->
-                                </div>
-                            </div>
+                            When enabled, excess points (above Max Rollover Points) are automatically converted to cash at midnight at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
+                            <br>Timezone used for scheduled daily cash-out: <strong id="tzDisplay">Loading timezone...</strong>
                         </div>
                     </div>
 
-                    <div class="setting-item">
-                        <div class="setting-label">
-                            <span class="text-title-sm">Max Rollover Points</span>
-                        </div>
+                    <div class="setting-group">
+                        <span class="setting-title">Max Rollover Points</span>                        
                         <div class="text-body">
                             Maximum number of points that can be carried over to the next day. Points above this amount will be converted to cash (if Automatic Daily Cash Out is enabled) or capped at this amount (if disabled).
                         </div>
@@ -68,13 +58,11 @@
                         <div style="text-align: right;">
                             <button class="btn btn-white-on-purple btn-sm" id="manualCashoutBtn" onclick="handleDailyCashOut()">Run One-Time Cash Out</button>
                             <div id="systemMessage" class="system-message"></div>
-                        </div>
+                        </div>                        
                     </div>
 
-                    <div class="setting-item">
-                        <div class="setting-label">
-                            <span class="text-title-sm">Chore Cooldown Periods</span>
-                        </div>
+                    <div class="setting-group">
+                        <span class="setting-title">Chore Cooldown Periods</span>
                         <div class="text-body">
                             Specify how long chores should be on cooldown after being completed, based on their repeat interval. This prevents the same chore from being recorded too frequently.
                         </div>
@@ -97,36 +85,31 @@
                         </div>
                     </div>
 
-                    <div class="setting-item">
-                        <div class="setting-label">
-                            <span class="text-title-sm">Kid Permissions</span>
-                        </div>
-                        <div class="text-subtitle">
-                            Kids can:
-                        </div>
+                    <div class="setting-group">
+                        <span class="setting-title">Kid Permissions</span>
                         <div style="margin-top: 16px;">
-                            <div class="setting-label" style="margin-bottom: 16px;">
+                            <div class="setting-entry" style="margin-bottom: 16px;">
                                 <span class="setting-name">Record a Chore</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="kidAllowedRecordChore">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
-                            <div class="setting-label" style="margin-bottom: 16px;">
+                            <div class="setting-entry" style="margin-bottom: 16px;">
                                 <span class="setting-name" >Redeem Points</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="kidAllowedRedeemPoints">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
-                            <div class="setting-label" style="margin-bottom: 16px;">
+                            <div class="setting-entry" style="margin-bottom: 16px;">
                                 <span class="setting-name">Withdraw Cash</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="kidAllowedWithdrawCash">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
-                            <div class="setting-label" style="margin-bottom: 16px;">
+                            <div class="setting-entry" style="margin-bottom: 16px;">
                                 <span class="setting-name">View History</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="kidAllowedViewHistory">
@@ -136,81 +119,59 @@
                         </div>
                     </div>
 
-                    <div class="setting-item">
-                        <div class="setting-label">
-                            <span class="text-title-sm">Email Notifications</span>
+                    <div class="setting-group">
+                        <div class="setting-entry">
+                            <span class="setting-title">Email Notifications</span>
                         </div>
                         <div style="margin-top: 16px;">
-                            <div class="input-group" style="margin-bottom: 12px;">
-                                <label for="emailSmtpServer" style="min-width: 150px;" class="setting-name">SMTP Server:</label>
-                                <input type="text" id="emailSmtpServer" class="form-input" style="max-width: 300px; flex: 1;" placeholder="smtp.gmail.com">
+                            <!-- Parent Email Addresses Row -->
+                            <div class="input-group" style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+                                <label for="parentEmailAddresses" class="setting-name">Parent Address(es)</label>
+                                <input type="text" id="parentEmailAddresses" class="form-input" style="max-width: 300px; flex: 1;" placeholder="email1@example.com, email2@example.com">
                             </div>
-                            <div class="input-group" style="margin-bottom: 12px;">
-                                <label for="emailSmtpPort" style="min-width: 150px;" class="setting-name">SMTP Port:</label>
-                                <input type="number" id="emailSmtpPort" class="form-input" min="1" max="65535" placeholder="587" style="width: 100px;">
-                                <span style="color: #666;">(usually 587 for TLS or 465 for SSL)</span>
+                            <div class="text-body" style="margin-bottom: 16px;">
+                                Comma separated list of email addresses to receive notifications.
                             </div>
-                            <div class="input-group" style="margin-bottom: 12px;">
-                                <label for="emailUsername" style="min-width: 150px;" class="setting-name">Username:</label>
-                                <input type="text" id="emailUsername" class="form-input" style="max-width: 300px; flex: 1;" placeholder="your.email@example.com">
+                            <!-- Chore Completed Notification Row -->
+                            <div class="setting-entry" style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+                                <span class="setting-name" style="font-size: 16px;">Notify when a chore is completed</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="emailNotifyChoreCompleted">
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
-                            <div class="input-group" style="margin-bottom: 12px;">
-                                <label for="emailPassword" style="min-width: 150px;" class="setting-name">Password:</label>
-                                <input type="password" id="emailPassword" class="form-input" style="max-width: 300px; flex: 1;" placeholder="Leave empty to keep existing">
+                            <!-- Points Redeemed Notification Row -->
+                            <div class="setting-entry" style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+                                <span class="setting-name" style="font-size: 16px;">Notify when points are redeemed</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="emailNotifyPointsRedeemed">
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
-                            <div class="input-group" style="margin-bottom: 12px;">
-                                <label for="emailSenderName" style="min-width: 150px;" class="setting-name">Sender Name:</label>
-                                <input type="text" id="emailSenderName" class="form-input" style="max-width: 300px; flex: 1;" placeholder="Family Chores">
+                            <!-- Cash Withdrawn Notification Row -->
+                            <div class="setting-entry" style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+                                <span class="setting-name" style="font-size: 16px;">Notify when cash is withdrawn</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="emailNotifyCashWithdrawn">
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
-                            <div style="margin-top: 16px;">
-                                <div class="input-group" style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
-                                    <label for="parentEmailAddresses" style="min-width: 150px;" class="setting-name">Parent Address(es):</label>
-                                    <input type="text" id="parentEmailAddresses" class="form-input" style="max-width: 300px; flex: 1;" placeholder="email1@example.com, email2@example.com">
-                                </div>
-                                <div style="text-align: right; margin-bottom: 12px;">
-                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="handleSendTestEmail()">Send Test Email</button>
-                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="sendDigestBtn" onclick="handleSendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
-                                    <div id="emailTestMessage" class="system-message"></div>
-                                </div>
-                                
+                            <!-- Daily Digest Notification Row -->
+                            <div class="setting-entry" style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+                                <span class="setting-name" style="font-size: 16px;">Send Daily Digest</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="emailNotifyDailyDigest">
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
-                                <div class="setting-label" style="margin-bottom: 16px;">
-                                    <div class="text-subtitle">
-                                        Notify immediately when:
-                                    </div>
-                                    </div>
-                                    <div class="setting-label" style="margin-bottom: 16px;">
-                                    <span class="setting-name" style="font-size: 16px;">A chore is completed</span>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="emailNotifyChoreCompleted">
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-                                <div class="setting-label" style="margin-bottom: 16px;">
-                                    <span class="setting-name" style="font-size: 16px;">Points are redeemed</span>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="emailNotifyPointsRedeemed">
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-                                <div class="setting-label" style="margin-bottom: 16px;">
-                                    <span class="setting-name" style="font-size: 16px;">Cash is withdrawn</span>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="emailNotifyCashWithdrawn">
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-                                <div class="setting-label" style="margin-bottom: 16px;">
-                                    <span class="text-subtitle">Daily Digest</span>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="emailNotifyDailyDigest">
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-                                <div class="text-body">
-                                    Daily digest sent at midnight with today's history and current balances
-                                </div>
-                    
+                            <div class="text-body" style="margin-bottom: 16px;">
+                                Daily digest sent at midnight with today's history and current balances.
+                                <br>Timezone used for sending daily digest: <strong id="tzDisplay2">Loading timezone...</strong>
+                            </div>
+                            <!-- Test Email and Digest Buttons Row -->
+                            <div style="text-align: right; margin-bottom: 12px;">
+                                <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="handleSendTestEmail()">Send Test Email</button>
+                                <button type="button" class="btn btn-white-on-purple btn-sm" id="sendDigestBtn" onclick="handleSendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
                             </div>
                         </div>
                     </div>
@@ -224,7 +185,7 @@
 
                 <div class="chores-section">
                     <div class="chores-section-header">
-                        <div class="text-title-sm" onclick="toggleChoresSection()">
+                        <div class="setting-title" onclick="toggleChoresSection()">
                             <span class="chores-toggle-icon" id="choresToggleIcon">▶</span>
                             <span>Chore Management</span>
                         </div>
@@ -278,7 +239,7 @@
 
                 <div class="chores-section">
                     <div class="chores-section-header">
-                        <div class="text-title-sm" onclick="toggleUsersSection()">
+                        <div class="setting-title" onclick="toggleUsersSection()">
                             <span class="chores-toggle-icon" id="usersToggleIcon">▶</span>
                             <span>User Management</span>
                         </div>
@@ -327,7 +288,7 @@
                 </div>
 
                 <div class="reset-section">
-                    <div class="text-title-sm">DANGER ZONE!</div>
+                    <div class="setting-title">DANGER ZONE!</div>
                         <div class="reset-buttons">
                             <button class="btn btn-red-on-white" onclick="confirmResetPoints()">Reset All Points</button>
                             <button class="btn btn-red-on-white" onclick="confirmResetCash()">Reset All Cash</button>
@@ -417,15 +378,8 @@
                     document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
                     document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
                 }
-                
-                // Email settings
-                document.getElementById('emailSmtpServer').value = settings.email_smtp_server || '';
-                document.getElementById('emailSmtpPort').value = settings.email_smtp_port || '587';
-                document.getElementById('emailUsername').value = settings.email_username || '';
-                document.getElementById('emailPassword').value = ''; // Don't populate password field
                 // Parent PIN: never populate the current PIN for security; leave empty to keep existing
                 document.getElementById('parentPin').value = '';
-                document.getElementById('emailSenderName').value = settings.email_sender_name || 'Family Chores';
                 document.getElementById('emailNotifyChoreCompleted').checked = settings.email_notify_chore_completed || false;
                 document.getElementById('emailNotifyPointsRedeemed').checked = settings.email_notify_points_redeemed || false;
                 document.getElementById('emailNotifyCashWithdrawn').checked = settings.email_notify_cash_withdrawn || false;
@@ -456,12 +410,7 @@
                 kid_allowed_redeem_points: document.getElementById('kidAllowedRedeemPoints').checked,
                 kid_allowed_withdraw_cash: document.getElementById('kidAllowedWithdrawCash').checked,
                 kid_allowed_view_history: document.getElementById('kidAllowedViewHistory').checked,
-                email_smtp_server: document.getElementById('emailSmtpServer').value.trim(),
-                email_smtp_port: document.getElementById('emailSmtpPort').value.trim(),
-                email_username: document.getElementById('emailUsername').value.trim(),
-                email_password: document.getElementById('emailPassword').value.trim(), // Only update if provided
                 parent_pin: document.getElementById('parentPin').value.trim(),
-                email_sender_name: document.getElementById('emailSenderName').value.trim(),
                 email_notify_chore_completed: document.getElementById('emailNotifyChoreCompleted').checked,
                 email_notify_points_redeemed: document.getElementById('emailNotifyPointsRedeemed').checked,
                 email_notify_cash_withdrawn: document.getElementById('emailNotifyCashWithdrawn').checked,
@@ -1416,10 +1365,11 @@
         async function loadTzDisplay() {
             try {
                 const info = await getServerTzInfo();
-                const el = document.getElementById('tzDisplay');
-                if (!el) return;
                 if (!info) {
-                    el.textContent = 'Unavailable';
+                    ['tzDisplay', 'tzDisplay2'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.textContent = 'Unavailable';
+                    });
                     return;
                 }
 
@@ -1431,12 +1381,19 @@
                 const sign = offsetMin <= 0 ? '-' : '+'; // negative means west (UTC-...)
                 const offsetStr = `UTC${sign}${hrs}${mins ? ':' + String(mins).padStart(2, '0') : ''}`;
                 const name = info.tz_name || '';
+                const tzText = name ? `${name} (${offsetStr})` : offsetStr;
 
-                el.textContent = name ? `${name} (${offsetStr})` : offsetStr;
+                // Update both timezone display elements
+                ['tzDisplay', 'tzDisplay2'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = tzText;
+                });
             } catch (err) {
                 console.error('Error loading TZ info:', err);
-                const el = document.getElementById('tzDisplay');
-                if (el) el.textContent = 'Unavailable';
+                ['tzDisplay', 'tzDisplay2'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = 'Unavailable';
+                });
             }
         }
 

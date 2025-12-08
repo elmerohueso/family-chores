@@ -549,14 +549,14 @@ header h1 {
     margin-bottom: 12px;
 }
 
-.text-title-sm {
+.setting-title {
     font-size: 18px;
     font-weight: 600;
     color: #333;
     margin-bottom: 20px;
 }
 
-.text-subtitle {
+.setting-subtitle {
     font-size: 16px;
     color: #666;
     font-weight: 600;
@@ -723,7 +723,7 @@ label {
 }
 
 /* Legacy aliases for settings page */
-.setting-label {
+.setting-entry {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -732,7 +732,7 @@ label {
 
 .setting-name {
     font-size: 16px;
-    font-weight: normal;
+    font-weight: 600;
     color: #666;
 }
 
@@ -1517,11 +1517,11 @@ input[type="file"] {
 
 /* ===== Settings Page Styles ===== */
 
-.setting-item {
+.setting-group {
     margin-bottom: 32px;
 }
 
-.setting-item:last-child {
+.setting-group:last-child {
     margin-bottom: 0;
 }
 

@@ -83,12 +83,6 @@ DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST
 AVATAR_DIR = '/data/avatars'
 os.makedirs(AVATAR_DIR, exist_ok=True)
 
-# Get SMTP settings from environment variables
-smtp_server = os.environ.get('SMTP_SERVER', '').strip()
-smtp_port = os.environ.get('SMTP_PORT', '587').strip()
-smtp_username = os.environ.get('SMTP_USERNAME', '').strip()
-smtp_password = os.environ.get('SMTP_PASSWORD', '').strip()
-smtp_sender_name = os.environ.get('SMTP_SENDER_NAME', 'Family Chores').strip()
 
 # Email password encryption key (derived from app secret key)
 def get_encryption_key():
@@ -2152,7 +2146,7 @@ def send_notification_email(notification_type, user_name, description, value=Non
     if not get_email_notification_setting(setting_key):
         return
     
-    # Get parent email addresses and all email settings to send notification to
+    # Get parent email addresses from tenant settings
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     # Tenant-scoped email settings only
@@ -2161,8 +2155,8 @@ def send_notification_email(notification_type, user_name, description, value=Non
         cursor.close()
         conn.close()
         return
-    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
-    results = cursor.fetchall()
+    cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, 'parent_email_addresses'))
+    result = cursor.fetchone()
     
     # Get user's current balances if user_id is provided (tenant-scoped)
     point_balance = None
@@ -2180,16 +2174,11 @@ def send_notification_email(notification_type, user_name, description, value=Non
     cursor.close()
     conn.close()
     
-    settings_dict = {row['setting_key']: row['setting_value'] for row in results}
-    
-    # Determine recipient emails - prefer parent_email_addresses, fallback to email_username
-    parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
-    username = settings_dict.get('email_username', '').strip()
+    # Determine recipient emails from parent_email_addresses setting
+    parent_emails_str = result['setting_value'].strip() if result and result.get('setting_value') else ''
     
     if parent_emails_str:
         email_list = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
-    elif username:
-        email_list = [username]
     else:
         return  # No email configured
     
@@ -2282,7 +2271,7 @@ Amount: ${abs(value) if value else 'N/A'}
     try:
         for email in email_list:
             try:
-                send_email(email, subject, body_html, body_text, settings_dict=settings_dict)
+                send_email(email, subject, body_html, body_text)
             except Exception:
                 pass  # Silently ignore individual email errors
     except Exception:
@@ -2339,11 +2328,6 @@ def get_settings():
         'kid_allowed_redeem_points': (kid_role and kid_role.get('can_redeem_points')) if kid_role is not None else (settings_dict.get('kid_allowed_redeem_points', '0') == '1'),
         'kid_allowed_withdraw_cash': (kid_role and kid_role.get('can_withdraw_cash')) if kid_role is not None else (settings_dict.get('kid_allowed_withdraw_cash', '0') == '1'),
         'kid_allowed_view_history': (kid_role and kid_role.get('can_view_history')) if kid_role is not None else (settings_dict.get('kid_allowed_view_history', '0') == '1'),
-        'email_smtp_server': settings_dict.get('email_smtp_server', ''),
-        'email_smtp_port': settings_dict.get('email_smtp_port', '587'),
-        'email_username': settings_dict.get('email_username', ''),
-        'email_password': '',  # Never return password in API
-        'email_sender_name': settings_dict.get('email_sender_name', 'Family Chores'),
         'email_notify_chore_completed': settings_dict.get('email_notify_chore_completed', '0') == '1',
         'email_notify_points_redeemed': settings_dict.get('email_notify_points_redeemed', '0') == '1',
         'email_notify_cash_withdrawn': settings_dict.get('email_notify_cash_withdrawn', '0') == '1',
@@ -2480,48 +2464,8 @@ def update_settings():
     update_kid_permission('kid_allowed_withdraw_cash', 'can_withdraw_cash', 2)
     update_kid_permission('kid_allowed_view_history', 'can_view_history', 3)
     
-    # Handle email settings
-    update_string_setting('email_smtp_server', '')
-    update_string_setting('email_username', '')
-    update_string_setting('email_sender_name', 'Family Chores')
+    # Handle email settings (only parent_email_addresses is tenant-scoped)
     update_string_setting('parent_email_addresses', '')
-    
-    # Handle SMTP port with validation
-    if 'email_smtp_port' in data:
-        try:
-            smtp_port = str(data['email_smtp_port']).strip()
-            if smtp_port and not smtp_port.isdigit():
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'SMTP port must be a number'}), 400
-            new_value = smtp_port or '587'
-            old_value = current_settings.get('email_smtp_port', '587')
-            if new_value != old_value:
-                changed_settings['email_smtp_port'] = {'old': old_value, 'new': new_value}
-            cursor.execute('''
-                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
-                VALUES (%s, 'email_smtp_port', %s)
-                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (tenant_id, new_value))
-        except (ValueError, TypeError):
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'SMTP port must be a number'}), 400
-    
-    if 'email_password' in data:
-        # Only update password if provided (not empty)
-        if data['email_password']:
-            # If password is provided, treat it as changed (can't compare encrypted values)
-            # But don't show the actual value in logs - show old value if exists
-            old_password_exists = bool(current_settings.get('email_password', ''))
-            changed_settings['email_password'] = {'old': '<set>' if old_password_exists else '<not set>', 'new': '<changed>'}
-            # Encrypt the password before storing
-            encrypted_password = encrypt_password(data['email_password'])
-            cursor.execute('''
-                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
-                VALUES (%s, 'email_password', %s)
-                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (tenant_id, encrypted_password))
     
     # Handle email notification toggles
     update_bool_setting('email_notify_chore_completed', '0')
@@ -2901,49 +2845,29 @@ def reset_transactions():
         
         return jsonify({'error': f'Error deleting transactions: {error_msg}'}), 500
 
-def send_email(to_email, subject, body_html, body_text=None, settings_dict=None):
-    """Send an email using SMTP settings from the database or provided settings.
+def send_email(to_email, subject, body_html, body_text=None):
+    """Send an email using global SMTP settings from environment variables.
     
     Args:
         to_email: Recipient email address
         subject: Email subject
         body_html: HTML body content
         body_text: Plain text body content (optional)
-        settings_dict: Optional pre-fetched settings dict. If not provided, fetches from database using tenant context.
     
     Returns:
         tuple: (success: bool, message: str) - success indicates if email was sent, message contains status or error
     """
     try:
-        # If settings not provided, fetch from database using tenant context
-        if settings_dict is None:
-            # Get tenant-scoped email settings from database
-            conn = get_db_connection()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-            if not tenant_id:
-                cursor.close()
-                conn.close()
-                return False, 'Tenant context required'
-            cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
-            settings = cursor.fetchall()
-            cursor.close()
-            conn.close()
-            
-            settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+        # Use global SMTP settings from environment variables only
+        smtp_server = os.environ.get('SMTP_SERVER', '').strip()
+        smtp_port = os.environ.get('SMTP_PORT', '587').strip()
+        username = os.environ.get('SMTP_USERNAME', '').strip()
+        password = os.environ.get('SMTP_PASSWORD', '').strip()
+        sender_name = os.environ.get('SMTP_SENDER_NAME', 'Family Chores').strip()
         
-        smtp_server = settings_dict.get('email_smtp_server', '').strip()
-        smtp_port = settings_dict.get('email_smtp_port', '587').strip()
-        username = settings_dict.get('email_username', '').strip()
-        encrypted_password = settings_dict.get('email_password', '').strip()
-        # Decrypt the password
-        password = decrypt_password(encrypted_password)
-        sender_name = settings_dict.get('email_sender_name', 'Family Chores').strip()
         # Validate required settings
-        if not password:
-            return False, "Please update the email Password in Settings."
-        elif not smtp_server or not smtp_port or not username:
-            return False, "Email settings are not configured. Please configure SMTP settings in Settings."
+        if not all([smtp_server, smtp_port, username, password]):
+            return False, "Email settings are not configured. Please set SMTP environment variables."
         
         # Create message
         msg = MIMEMultipart('alternative')
@@ -3051,37 +2975,16 @@ This link will expire in 24 hours.
 If you did not create this account, please ignore this email.
     """
     
-
-    
-    # If environment variables not set, try to fetch from first tenant's settings as fallback
-    if not all([smtp_server, smtp_username, smtp_password]):
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            # Try to get settings from any tenant (use first one)
-            cursor.execute('''
-                SELECT setting_key, setting_value FROM tenant_settings 
-                WHERE setting_key LIKE 'email_%'
-                LIMIT 1
-            ''')
-            results = cursor.fetchall()
-            cursor.close()
-            conn.close()
-            
-            if results:
-                settings_dict = {row['setting_key']: row['setting_value'] for row in results}
-                smtp_server = smtp_server or settings_dict.get('email_smtp_server', '').strip()
-                smtp_port = smtp_port or settings_dict.get('email_smtp_port', '587').strip()
-                smtp_username = smtp_username or settings_dict.get('email_username', '').strip()
-                encrypted_password = settings_dict.get('email_password', '').strip()
-                smtp_password = smtp_password or decrypt_password(encrypted_password) if encrypted_password else ''
-                smtp_sender_name = smtp_sender_name or settings_dict.get('email_sender_name', 'Family Chores').strip()
-        except Exception as e:
-            logger.warning(f"Failed to fetch SMTP settings from database: {e}")
+    # Use global SMTP settings from environment variables only
+    smtp_server = os.environ.get('SMTP_SERVER', '').strip()
+    smtp_port = os.environ.get('SMTP_PORT', '587').strip()
+    smtp_username = os.environ.get('SMTP_USERNAME', '').strip()
+    smtp_password = os.environ.get('SMTP_PASSWORD', '').strip()
+    smtp_sender_name = os.environ.get('SMTP_SENDER_NAME', 'Family Chores').strip()
     
     # Validate required settings
     if not all([smtp_server, smtp_username, smtp_password]):
-        raise Exception("Email settings are not configured. Please configure SMTP settings or set environment variables.")
+        raise Exception("Email settings are not configured. Please set SMTP environment variables.")
     
     try:
         # Create message
@@ -3130,7 +3033,7 @@ def send_test_email():
     # Get parent email addresses from request
     parent_emails = data.get('parent_email_addresses', [])
     
-    # Get tenant-scoped email settings from database
+    # Get tenant-scoped parent email addresses from database
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
@@ -3138,14 +3041,12 @@ def send_test_email():
         cursor.close()
         conn.close()
         return jsonify({'error': 'Tenant context required'}), 400
-    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', (tenant_id, 'email_username', 'parent_email_addresses'))
-    settings = cursor.fetchall()
+    cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, 'parent_email_addresses'))
+    result = cursor.fetchone()
     cursor.close()
     conn.close()
     
-    settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
-    username = settings_dict.get('email_username', '').strip()
-    stored_parent_emails = settings_dict.get('parent_email_addresses', '').strip()
+    stored_parent_emails = result['setting_value'].strip() if result and result.get('setting_value') else ''
     
     # Determine recipient emails
     if parent_emails and len(parent_emails) > 0:
@@ -3154,11 +3055,8 @@ def send_test_email():
     elif stored_parent_emails:
         # Use stored parent emails
         email_list = [e.strip() for e in stored_parent_emails.split(',') if e.strip()]
-    elif username:
-        # Fallback to username
-        email_list = [username]
     else:
-        return jsonify({'error': 'Please provide parent email addresses or configure a username in email settings'}), 400
+        return jsonify({'error': 'Please provide parent email addresses in settings'}), 400
     
     # Validate email formats (basic check)
     for email in email_list:
@@ -4005,7 +3903,7 @@ Sent from Family Chores application
     success_count = 0
     error_messages = []
     for email in parent_emails:
-        success, message = send_email(email, subject, body_html, body_text, settings_dict=settings_dict)
+        success, message = send_email(email, subject, body_html, body_text)
         if success:
             logger.info(f"Daily digest email sent to {email}")
             success_count += 1
