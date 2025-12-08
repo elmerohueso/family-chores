@@ -153,9 +153,15 @@
             if (r.status === 401) {
               // Allow callers to opt out of automatic redirect (e.g. login page)
               const skipRedirect = init && (init._skipAuthRedirect || init.skipAuthRedirect);
+              try {
+                if (typeof clearClientAuthState === 'function') {
+                  clearClientAuthState({ clearRole: true });
+                } else {
+                  localStorage.removeItem('fc_token');
+                }
+              } catch (e) {}
               if (skipRedirect) return r;
               // Unauthorized — clear token and go to login page
-              localStorage.removeItem('fc_token');
               window.location.href = '/';
               return r;
             }

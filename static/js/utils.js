@@ -599,6 +599,35 @@ async function authCheck() {
     return fetch('/api/auth-check', { method: 'GET', credentials: 'include' });
 }
 
+// Clear client-side auth artifacts (local tokens + best-effort cookie expiry)
+function clearClientAuthState(options = {}) {
+    try {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('refresh_expires');
+        localStorage.removeItem('tenant_name');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('fc_token');
+    } catch (e) {
+        console.warn('clearClientAuthState localStorage issue:', e);
+    }
+
+    // Attempt to expire cookies; HttpOnly cookies must be cleared server-side,
+    // but expiring them client-side is a safe best-effort.
+    try {
+        const expire = 'Max-Age=0; path=/';
+        document.cookie = `tenant_id=; ${expire}`;
+        document.cookie = `refresh_token=; ${expire}`;
+        document.cookie = `access_token=; ${expire}`;
+    } catch (e) {
+        console.warn('clearClientAuthState cookie issue:', e);
+    }
+
+    if (options.clearRole && typeof setLocalRole === 'function') {
+        try { setLocalRole(''); } catch (_) {}
+    }
+}
+
 /**
  * Perform tenant authentication login.
  * @param {string} username - Tenant username
@@ -606,39 +635,54 @@ async function authCheck() {
  * @returns {Promise<{ok: boolean, status: number, data: Object}>} Login result with token/error
  */
 async function authLogin(username, password) {
-    const resp = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        // send username as tenant_name to reuse existing tenant auth flow
-        body: JSON.stringify({
-            tenant_name: username,
-            password
-        }),
-        credentials: 'include', // ensure cookie Set-Cookie is accepted
-        // Instruct global fetch wrapper not to auto-redirect on 401 for login attempts
-        _skipAuthRedirect: true
-    });
-    // Try to parse JSON; if server returned plain text (or HTML), fall back to text
-    let data = {};
     try {
-        data = await resp.json();
-    } catch (e) {
+        const resp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            // send username as tenant_name to reuse existing tenant auth flow
+            body: JSON.stringify({
+                tenant_name: username,
+                password
+            }),
+            credentials: 'include', // ensure cookie Set-Cookie is accepted
+            // Instruct global fetch wrapper not to auto-redirect on 401 for login attempts
+            _skipAuthRedirect: true
+        });
+        // Try to parse JSON; if server returned plain text (or HTML), fall back to text
+        let data = {};
         try {
-            const txt = await resp.text();
-            data = {
-                error: txt
-            };
-        } catch (e2) {
-            data = {};
+            data = await resp.json();
+        } catch (e) {
+            try {
+                const txt = await resp.text();
+                data = {
+                    error: txt
+                };
+            } catch (e2) {
+                data = {};
+            }
         }
+
+        if (resp.status === 401) {
+            clearClientAuthState({ clearRole: true });
+        }
+
+        return {
+            ok: resp.ok,
+            status: resp.status,
+            data
+        };
+    } catch (err) {
+        console.error('authLogin network failure:', err);
+        clearClientAuthState({ clearRole: true });
+        return {
+            ok: false,
+            status: 0,
+            data: { error: 'Network error. Please try again.' }
+        };
     }
-    return {
-        ok: resp.ok,
-        status: resp.status,
-        data
-    };
 }
 
 /**
@@ -1173,22 +1217,28 @@ async function getServerTzInfo() {
  */
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/sw.js')
+        const versionParam = (window.__assetVersion) ? `?v=${window.__assetVersion}` : '';
+        const swUrl = `/static/sw.js${versionParam}`;
+        navigator.serviceWorker.register(swUrl, { updateViaCache: 'none' })
             .then((registration) => {
                 console.log('[PWA] Service Worker registered:', registration.scope);
-                
+
                 // Check for updates periodically
                 setInterval(() => {
                     registration.update();
                 }, 60 * 60 * 1000); // Check every hour
-                
+
                 // Handle service worker updates
                 registration.addEventListener('updatefound', () => {
                     const newWorker = registration.installing;
                     newWorker.addEventListener('statechange', () => {
                         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                             console.log('[PWA] New version available');
-                            // Optional: Show update notification to user
+                            if (registration.waiting) {
+                                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                            }
+                            // Reload to ensure latest assets and cache version
+                            window.location.reload();
                         }
                     });
                 });

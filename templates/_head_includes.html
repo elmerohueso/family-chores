@@ -1,10 +1,14 @@
+{% set ASSET_VERSION = '2025-12-08a' %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#667eea">
 <meta name="description" content="Family chore tracking and point reward system">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/favicon.png') }}">
-<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192x192.png') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-<script>window.__serverRole = "{{ session.get('user_role') or '' }}";</script>
-<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/favicon.png', v=ASSET_VERSION) }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json', v=ASSET_VERSION) }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192x192.png', v=ASSET_VERSION) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css', v=ASSET_VERSION) }}">
+<script>
+	window.__assetVersion = "{{ ASSET_VERSION }}";
+	window.__serverRole = "{{ session.get('user_role') or '' }}";
+</script>
+<script src="{{ url_for('static', filename='js/utils.js', v=ASSET_VERSION) }}"></script>

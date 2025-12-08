@@ -3,15 +3,16 @@
  * Handles offline caching and PWA functionality
  */
 
-const CACHE_VERSION = 'v1.3.0';
+const ASSET_VERSION = '2025-12-08a';
+const CACHE_VERSION = `v1.4.0-${ASSET_VERSION}`;
 const CACHE_NAME = `family-chores-${CACHE_VERSION}`;
 
 // Core app shell - always cached
 const CORE_ASSETS = [
   '/',
-  '/static/css/styles.css',
-  '/static/js/utils.js',
-  '/static/manifest.json'
+  `/static/css/styles.css?v=${ASSET_VERSION}`,
+  `/static/js/utils.js?v=${ASSET_VERSION}`,
+  `/static/manifest.json?v=${ASSET_VERSION}`
 ];
 
 // Pages to cache on first visit (network-first strategy)
