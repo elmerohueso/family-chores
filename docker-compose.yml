@@ -2,10 +2,7 @@ services:
   familychores-db:
     container_name: familychores-db
     image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=family_chores
-      - POSTGRES_USER=family_chores
-      - POSTGRES_PASSWORD=family_chores
+    env_file: .env
     volumes:
       - db_data:/var/lib/postgresql/data
     ports:
@@ -30,37 +27,6 @@ services:
       - avatar_data:/data/avatars
       - backup_data:/data/backups
       - syslog_data:/data/syslogs
-    environment:
-      - FLASK_ENV=development
-      - SECRET_KEY=dev-secret-key-change-in-production
-      - POSTGRES_HOST=familychores-db
-      - POSTGRES_DATABASE=family_chores
-      - POSTGRES_USER=family_chores
-      - POSTGRES_PASSWORD=family_chores
-      # Username and password for the initial tenant
-      - ADMIN_NAME=${ADMIN_NAME}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      # Parent PIN for the initial tenant
-      - PARENT_PIN=${PARENT_PIN}
-      # Management key to create invite tokens
-      - INVITE_CREATION_KEY=${INVITE_CREATION_KEY}
-      # Valid timezone values: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
-      - TZ=America/Denver
-      # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
-      - LOG_LEVEL=INFO
-      # Token lifetimes (seconds): adjust for your security and UX needs
-      # ACCESS_TOKEN_EXPIRES: access token lifetime in seconds (default: 900 = 15 minutes)
-      - ACCESS_TOKEN_EXPIRES=900
-      # REFRESH_TOKEN_EXPIRES: refresh token lifetime in seconds (default: 2592000 = 30 days)
-      - REFRESH_TOKEN_EXPIRES=2592000
-      # SMTP Configuration for email notifications and tenant email verification
-      - SMTP_SERVER=${SMTP_SERVER}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USERNAME=${SMTP_USERNAME}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - SMTP_SENDER_NAME=${SMTP_SENDER_NAME}
-      # Application URL for verification links
-      - APP_URL=${APP_URL}
     networks:
       - familychores-network
     depends_on:

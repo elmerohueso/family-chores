@@ -78,42 +78,95 @@ Parents have full control over what kids can access through granular permission 
 - Docker Compose
 
 ### Run using pre-built image
-1. Download docker-compose.yml from this repository
-2. Edit the environment variables, ports, and volumes as desired
-- Set the credentials for your initial tenant: `ADMIN_NAME`, `ADMIN_PASSWORD`, `PARENT_PIN`.
-- Set a secure management key: `TENANT_CREATION_KEY`.
-3. From the directory housing docker-compose.yml, run the following commands:
 
-`docker compose up -d`
+1. **Download files from this repository:**
+   - `docker-compose.yml`
+   - `.env.example`
 
-The application will be available at `http://localhost:8000` (or at the specified port)
+2. **Create your environment file:**
+   ```bash
+   # Copy the example file
+   cp .env.example .env
+   ```
+
+3. **Edit `.env` with your configuration:**
+   - **Required for first run:**
+     - `ADMIN_NAME` - Username for initial tenant
+     - `ADMIN_PASSWORD` - Password for initial tenant (change this!)
+     - `PARENT_PIN` - 4-digit PIN for parent access
+     - `INVITE_CREATION_KEY` - Secure key for creating new tenant invites (see generation command below)
+     - `SECRET_KEY` - Flask encryption key (generate a secure random string)
+   
+   - **Database credentials** (change for production):
+     - `POSTGRES_PASSWORD` - Database password
+   
+   - **Email notifications** (optional but recommended):
+     - `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_NAME`
+     - `APP_URL` - Your application's public URL (for email links)
+   
+   - **Other settings** (adjust as needed):
+     - `TZ` - Your timezone (default: America/Denver)
+     - `LOG_LEVEL` - DEBUG, INFO, WARNING, ERROR, or CRITICAL
+     - Token lifetimes, Flask environment, etc.
+
+   **Generate secure keys:**
+   ```bash
+   # For INVITE_CREATION_KEY and SECRET_KEY
+   python -c "import secrets; print(secrets.token_urlsafe(48))"
+   ```
+
+4. **Start the application:**
+   ```bash
+   docker compose up -d
+   ```
+
+The application will be available at `http://localhost:8000` (or at the port specified in docker-compose.yml)
+
+**Important:** Never commit your `.env` file to version control - it contains sensitive credentials!
 
 
 
-#### Environment Variables
+#### Environment Variables Reference
 
-These variables control application security, database access, multi-tenancy, and operational settings. For multi-tenant deployments, each tenant's data is isolated, but global variables (like `TENANT_CREATION_KEY`) control tenant creation and access.
+All configuration is managed through environment variables in your `.env` file. The setup instructions above cover the key values you need to configure. Below is a complete reference of all available settings:
 
-- `SECRET_KEY` — Flask session encryption and Fernet key for sensitive data (default: `dev-secret-key-change-in-production`).
-- `POSTGRES_HOST` — PostgreSQL hostname (default: `familychores-db`).
-- `POSTGRES_DATABASE` — Database name (default: `family_chores`).
-- `POSTGRES_USER` — Database user (default: `family_chores`).
-- `TZ` — Set to your local timezone (default: `America/Denver`).
-- `LOG_LEVEL` — Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`).
-- `ACCESS_TOKEN_EXPIRES` — Access token lifetime in seconds (default: `900` (15 minutes)).
-- `REFRESH_TOKEN_EXPIRES` — Refresh token lifetime in seconds (default: `2592000` (30 days)).
+**Database Configuration:**
+- `POSTGRES_HOST` — PostgreSQL hostname (default: `familychores-db`)
+- `POSTGRES_DB` — Database name (default: `family_chores`)
+- `POSTGRES_USER` — Database user (default: `family_chores`)
+- `POSTGRES_PASSWORD` — Database password (⚠️ **change in production**)
 
-**Sensitive credentials** (store these in a `.env` file):
-- `ADMIN_NAME` — Username for the first tenant.
-- `ADMIN_PASSWORD` — Password for the first tenant (can be changed later within the application).
-- `PARENT_PIN` — Parent PIN for the first tenant (can be changed later within the application).
-- `TENANT_CREATION_KEY` — Management key used to protect the tenant-creation API.
+**Flask Application:**
+- `FLASK_ENV` — Environment mode: `development` or `production`
+- `SECRET_KEY` — Flask session encryption and Fernet key for sensitive data (⚠️ **generate secure key for production**)
+- `APP_URL` — Your application's public URL (used in email verification links)
+- `TZ` — Timezone for scheduling (default: `America/Denver`) - [List of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
+- `LOG_LEVEL` — Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (default: `INFO`)
+
+**Security & Authentication:**
+- `ACCESS_TOKEN_EXPIRES` — JWT access token lifetime in seconds (default: `900` = 15 minutes)
+- `REFRESH_TOKEN_EXPIRES` — Refresh token lifetime in seconds (default: `2592000` = 30 days)
+- `INVITE_CREATION_KEY` — Management key to protect tenant creation API (⚠️ **generate secure key**)
+
+**Initial Tenant Setup** (first run only):
+- `ADMIN_NAME` — Username for the first tenant
+- `ADMIN_PASSWORD` — Password for the first tenant (⚠️ **change this!** Can be updated later in settings)
+- `PARENT_PIN` — 4-digit parent PIN for the first tenant (can be changed later in settings)
+
+**Email / SMTP Configuration** (optional):
+- `SMTP_SERVER` — SMTP server hostname (e.g., `smtp.gmail.com`)
+- `SMTP_PORT` — SMTP port (typically `587` for TLS)
+- `SMTP_USERNAME` — SMTP authentication username
+- `SMTP_PASSWORD` — SMTP authentication password
+- `SMTP_SENDER_NAME` — Display name for outgoing emails (e.g., `Family Chores`)
+
+**See `.env.example` for a complete template with all available options.**
 
 
 
 ### Multi-Tenancy and Tenant Creation
 
-The application is designed for multi-tenancy: each family (tenant) has its own isolated data and settings. Tenant creation uses single-use invite tokens that are protected by a management key (`TENANT_CREATION_KEY`).
+The application is designed for multi-tenancy: each family (tenant) has its own isolated data and settings. Tenant creation uses single-use invite tokens that are protected by a management key (`INVITE_CREATION_KEY`).
 
 #### Generating a Management Key
 
