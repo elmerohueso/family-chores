@@ -64,7 +64,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-producti
 
 # Application version
 
-__version__ = '3.0.0'
+__version__ = '3.0.1'
 
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
