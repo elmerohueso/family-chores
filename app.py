@@ -3780,52 +3780,93 @@ def _send_digest_for_tenant(parent_emails, transactions, users, date_str, trigge
         triggered_manually: Whether this was manually triggered
         settings_dict: Optional pre-fetched email settings dict. If not provided, settings will be fetched from request context.
     """
-    # Format transactions for email
+    # Group transactions by user
+    transactions_by_user = {}
+    for t in transactions:
+        user_name = t.get('user_name', 'Unknown')
+        if user_name not in transactions_by_user:
+            transactions_by_user[user_name] = []
+        transactions_by_user[user_name].append(t)
+    
+    # Format transactions for email - separate table per user
     transactions_html = ""
     transactions_text = ""
+    
     if transactions:
-        for t in transactions:
-            transaction_type = t.get('transaction_type', '')
-            value = t.get('value', 0)
-            description = t.get('description', '')
-            user_name = t.get('user_name', 'Unknown')
-            timestamp = t.get('timestamp')
-            
-            if timestamp:
-                timestamp_aware = make_timezone_aware(timestamp)
-                time_str = timestamp_aware.strftime('%I:%M %p')
-            else:
-                time_str = 'N/A'
-            
-            if transaction_type == 'chore_completed':
-                type_label = "Chore Completed"
-                value_display = f"+{value} points"
-            elif transaction_type == 'points_redemption':
-                type_label = "Points Redeemed"
-                value_display = f"-{abs(value)} points"
-            elif transaction_type == 'cash_withdrawal':
-                type_label = "Cash Withdrawn"
-                value_display = f"-${abs(value):.2f}"
-            else:
-                type_label = "Transaction"
-                if value >= 0:
-                    value_display = f"+{value} points"
-                else:
-                    value_display = f"{value} points"
+        # Iterate through users to maintain order and show activity tables
+        for user in users:
+            user_name = user.get('full_name', 'Unknown')
+            user_transactions = transactions_by_user.get(user_name, [])
             
             transactions_html += f"""
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
-            </tr>
+        <h4 style="margin-top: 20px; margin-bottom: 10px; color: #667eea;">{user_name}'s Activity</h4>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background-color: #f5f5f5;">
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
+                </tr>
+            </thead>
+            <tbody>
             """
-            transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
+            
+            transactions_text += f"\n{user_name}'s Activity:\n"
+            
+            if user_transactions:
+                for t in user_transactions:
+                    transaction_type = t.get('transaction_type', '')
+                    value = t.get('value', 0)
+                    description = t.get('description', '')
+                    timestamp = t.get('timestamp')
+                    
+                    if timestamp:
+                        timestamp_aware = make_timezone_aware(timestamp)
+                        time_str = timestamp_aware.strftime('%I:%M %p')
+                    else:
+                        time_str = 'N/A'
+                    
+                    if transaction_type == 'chore_completed':
+                        type_label = "Chore Completed"
+                        value_display = f"+{value} points"
+                    elif transaction_type == 'points_redemption':
+                        type_label = "Points Redeemed"
+                        value_display = f"-{abs(value)} points"
+                    elif transaction_type == 'cash_withdrawal':
+                        type_label = "Cash Withdrawn"
+                        value_display = f"-${abs(value):.2f}"
+                    else:
+                        type_label = "Transaction"
+                        if value >= 0:
+                            value_display = f"+{value} points"
+                        else:
+                            value_display = f"{value} points"
+                    
+                    transactions_html += f"""
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
+                </tr>
+                """
+                    transactions_text += f"  {time_str} - {type_label}: {description} ({value_display})\n"
+            else:
+                transactions_html += """
+                <tr>
+                    <td colspan="4" style="padding: 8px; text-align: center; color: #666;">No activity</td>
+                </tr>
+                """
+                transactions_text += "  No activity\n"
+            
+            transactions_html += """
+            </tbody>
+        </table>
+            """
     else:
-        transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions yesterday</td></tr>"
-        transactions_text = "No transactions yesterday\n"
+        transactions_html = "<p style='color: #666;'>No activity yesterday</p>"
+        transactions_text = "No activity yesterday\n"
     
     # Format user balances
     balances_html = ""
@@ -3853,20 +3894,7 @@ def _send_digest_for_tenant(parent_emails, transactions, users, date_str, trigge
         <h2>Daily Digest - {date_str}</h2>
         
         <h3>Yesterday's Activity</h3>
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-            <thead>
-                <tr style="background-color: #f5f5f5;">
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
-                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
-                </tr>
-            </thead>
-            <tbody>
-                {transactions_html}
-            </tbody>
-        </table>
+        {transactions_html}
         
         <h3>Current Balances</h3>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
