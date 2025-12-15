@@ -20,13 +20,11 @@
         <div class="card">
             <div id="loading" class="loading">Loading history...</div>
             <div id="historyContainer" style="display: none;">
-                <div id="userFilterBadge" class="user-filter-badge" style="display: none;">
-                    <span>Showing records for: <strong id="filteredUserName"></strong></span>
-                    <a href="/history" class="clear-filter" title="Clear filter">×</a>
-                </div>
+                <span class="user-name"id="filteredUserName"></span>
+                <div class="mb-3" aria-hidden="true"></div>
                 <div class="search-bar">
                     <span class="search-icon">🔍</span>
-                    <input type="text" id="searchInput" class="search-input" placeholder="Search by user, chore, or type...">
+                    <input type="text" id="searchInput" class="search-input">
                 </div>
                 <div id="tableScrollTop" class="table-scroll-top">
                     <div id="tableScrollTopInner" class="table-scroll-top-inner"></div>
@@ -269,6 +267,12 @@
 
             table.style.display = 'table';
             emptyState.style.display = 'none';
+            
+            // Hide user column if filtering by user
+            const userHeader = table.querySelector('th:nth-child(1)');
+            if (userHeader) {
+                userHeader.style.display = filterUserId ? 'none' : '';
+            }
 
             tableBody.innerHTML = filteredTransactions.map(transaction => {
                 const type = getTransactionType(transaction);
@@ -297,7 +301,7 @@
                 
                 return `
                     <tr>
-                        <td class="history-user-name">${escapeHtml(transaction.user_name || 'Unknown')}</td>
+                        <td class="history-user-name" style="display: ${filterUserId ? 'none' : ''};">${escapeHtml(transaction.user_name || 'Unknown')}</td>
                         <td>
                             <span class="badge ${typeClass}">
                                 ${escapeHtml(typeLabel)}
@@ -340,10 +344,10 @@
                     if (filteredTransaction) {
                         filteredUserName = filteredTransaction.user_name || 'Unknown';
                         document.getElementById('filteredUserName').textContent = filteredUserName;
-                        document.getElementById('userFilterBadge').style.display = 'inline-flex';
+                        document.getElementById('searchInput').placeholder = 'Search by Type or Description...';
                     }
                 } else {
-                    document.getElementById('userFilterBadge').style.display = 'none';
+                        document.getElementById('searchInput').placeholder = 'Search by User, Type, or Description...';
                 }
 
                 const loadingDiv = document.getElementById('loading');
