@@ -1590,6 +1590,8 @@ input:checked + .toggle-slider:before {
     box-sizing: border-box;
     text-align: center;
     word-break: break-word;
+    cursor: pointer;
+    user-select: none;
 }
 
 .toast.show {
