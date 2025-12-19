@@ -29,15 +29,8 @@
                 <div class="form-group">
                     <label for="points">Points to Redeem *</label>
                     <div class="input-group">
-                        <input type="number" id="points" name="points" required min="5" step="5" value="" placeholder="Must be multiple of 5">
-                    </div>
-                    <div class="quick-select">
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(5)">5</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(10)">10</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(15)">15</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(20)">20</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(25)">25</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(50)">50</button>
+                        <select id="points" name="points" required>
+                        </select>
                     </div>
                     <div class="help-text">Points can only be redeemed in multiples of 5</div>
                 </div>
@@ -104,9 +97,21 @@
             updateSubmitButton();
         }
 
-        function setPoints(points) {
-            document.getElementById('points').value = points;
-            updatePreview();
+        function populatePointsDropdown(userBalance) {
+            const pointsSelect = document.getElementById('points');
+            if (userBalance < 5) {
+                pointsSelect.innerHTML = '<option value="">Not enough points</option>';
+                return;
+            }
+            else {            
+                const maxPoints = userBalance;
+                for (let i = 5; i <= maxPoints; i += 5) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = `${i} points`;
+                    pointsSelect.appendChild(option);
+                }
+            }
         }
 
         function selectRedemptionType(type) {
@@ -184,6 +189,9 @@
                         balanceDiv.textContent = `Current balance: ${user.points_balance || 0} points`;
                         balanceDiv.style.display = 'block';
                         
+                        // Populate points dropdown with multiples of 5 up to user's balance
+                        populatePointsDropdown(user.points_balance || 0);
+                        
                         // Clean up URL without reloading the page
                         const cleanUrl = window.location.pathname;
                         window.history.replaceState({}, '', cleanUrl);
@@ -201,14 +209,8 @@
             }
         }
 
-        // Validate points input (must be multiple of 5)
-        document.getElementById('points').addEventListener('input', (e) => {
-            const value = parseInt(e.target.value);
-            if (value && value % 5 !== 0) {
-                e.target.setCustomValidity('Points must be a multiple of 5');
-            } else {
-                e.target.setCustomValidity('');
-            }
+        // Handle points selection
+        document.getElementById('points').addEventListener('change', (e) => {
             updatePreview();
             updateSubmitButton();
         });

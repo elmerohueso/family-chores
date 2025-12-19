@@ -30,17 +30,9 @@
                     <label for="amount">Amount to Withdraw *</label>
                     <div class="input-group">
                         <span style="font-size: 20px; color: #666;">$</span>
-                        <input type="number" id="amount" name="amount" required min="1" step="1" value="" placeholder="Whole dollars only">
+                        <input type="number" id="amount" name="amount" required min="1" step="1" value="1" inputmode="none" onkeydown="return false;">
                     </div>
-                    <div class="quick-select">
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setAmount(1)">$1</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setAmount(2)">$2</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setAmount(3)">$3</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setAmount(4)">$4</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setAmount(5)">$5</button>
-                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setAmount(10)">$10</button>
-                    </div>
-                    <div class="help-text">Amount must be a whole dollar (no cents)</div>
+                    <div class="help-text">Use the up/down arrows to select amount</div>
                 </div>
 
                 <div id="cashPreview" class="preview-box" style="display: none;">
@@ -86,9 +78,15 @@
             updateSubmitButton();
         }
 
-        function setAmount(amount) {
-            document.getElementById('amount').value = amount;
-            updatePreview();
+        function setMaxAmount(cashBalance) {
+            const amountInput = document.getElementById('amount');
+            if (cashBalance > 0) {
+                amountInput.max = Math.floor(cashBalance);
+                amountInput.disabled = false;
+            } else {
+                amountInput.max = 0;
+                amountInput.disabled = true;
+            }
         }
 
         function updatePreview() {
@@ -152,6 +150,16 @@
                         const balanceDiv = document.getElementById('userCashBalance');
                         balanceDiv.textContent = `Current cash balance: $${(user.cash_balance || 0).toFixed(2)}`;
                         balanceDiv.style.display = 'block';
+                        
+                        // Set max amount on input field
+                        setMaxAmount(user.cash_balance || 0);
+                        if ((user.cash_balance || 0) < 1) {
+                            showToast('User has no cash balance to withdraw.', true);
+                        }
+                        else {
+                            document.getElementById('amount').value = '1';
+                            updatePreview();
+                        }
                         
                         // Clean up URL without reloading the page
                         const cleanUrl = window.location.pathname;

@@ -1789,3 +1789,17 @@ input:checked + .toggle-slider:before {
         text-align: center;
     }
 }
+
+/* Ensure number input spinners are always visible */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: inner-spin-button;
+    opacity: 1;
+    display: block;
+}
+
+/* Firefox */
+#amount {
+    appearance: auto;
+    -moz-appearance: auto;
+}
