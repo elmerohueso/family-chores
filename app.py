@@ -64,7 +64,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-producti
 
 # Application version
 
-__version__ = '3.1.1'
+__version__ = '3.1.2'
 
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
@@ -899,6 +899,18 @@ def api_create_tenant():
             except Exception:
                 pass
             return jsonify({'error': 'Failed to store parent PIN'}), 500
+        
+        # Set the tenant's email address as the parent email
+        try:
+            encrypted_pin = encrypt_password(parent_pin)
+            cur.execute('''
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, 'parent_email_addresses', tenant_email))
+        except Exception:
+            # Non-fatal; continue even if seeding fails
+            pass
 
         # Seed tenant_roles for the new tenant: create a 'kid' role (defaults False)
         # and a 'parent' role (all permissions True). This is idempotent.
