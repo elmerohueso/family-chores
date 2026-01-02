@@ -64,20 +64,20 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-producti
 
 # Application version
 
-__version__ = '3.0.0'
+__version__ = '3.2.0'
 
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
 # Database connection configuration from environment variables
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
-POSTGRES_DATABASE = os.environ.get('POSTGRES_DATABASE', 'family_chores')
+POSTGRES_DB = os.environ.get('POSTGRES_DB', 'family_chores')
 POSTGRES_USER = os.environ.get('POSTGRES_USER', 'family_chores')
 POSTGRES_PASSWORD = os.environ.get('POSTGRES_PASSWORD', 'family_chores')
 POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432')
 
 # Construct database connection string
-DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DATABASE}'
+DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}'
 
 # Avatar storage directory
 AVATAR_DIR = '/data/avatars'
@@ -765,7 +765,7 @@ def api_create_tenant():
     invite_token = (data.get('invite_token') or '').strip()
     tenant_email = (data.get('tenant_email') or '').strip()
 
-    # Require invite token (no management key fallback)
+    # Require invite token
     if not invite_token:
         try:
             log_system_event('tenant_create_forbidden', 'Attempt to create tenant without invite token', None, 'error')
@@ -899,6 +899,18 @@ def api_create_tenant():
             except Exception:
                 pass
             return jsonify({'error': 'Failed to store parent PIN'}), 500
+        
+        # Set the tenant's email address as the parent email
+        try:
+            encrypted_pin = encrypt_password(parent_pin)
+            cur.execute('''
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, 'parent_email_addresses', tenant_email))
+        except Exception:
+            # Non-fatal; continue even if seeding fails
+            pass
 
         # Seed tenant_roles for the new tenant: create a 'kid' role (defaults False)
         # and a 'parent' role (all permissions True). This is idempotent.
@@ -932,6 +944,43 @@ def api_create_tenant():
 
         conn.commit()
 
+        # Send notification email to super admin about new tenant creation
+        super_admin_email = os.environ.get('SUPER_ADMIN_EMAIL', '').strip()
+        if super_admin_email:
+            try:
+                subject = f"New Tenant Created Pending Verification: {tenant_name}"
+                body_html = f"""
+                <html>
+                    <head></head>
+                    <body>
+                    <h2>New Tenant Registration Pending Verification</h2>
+                    <p>A new tenant has been created in Family Chores:</p>
+                    <ul>
+                        <li><strong>Tenant Name:</strong> {tenant_name}</li>
+                        <li><strong>Tenant ID:</strong> {tenant_id}</li>
+                        <li><strong>Email:</strong> {tenant_email if tenant_email else 'Not provided'}</li>
+                        <li><strong>Created At:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</li>
+                    </ul>
+                    <hr>
+                    <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+                    </body>
+                </html>
+                """
+                body_text = f"""New Tenant Registration Pending Verification
+
+        A new tenant has been created in Family Chores:
+
+        Tenant Name: {tenant_name}
+        Tenant ID: {tenant_id}
+        Email: {tenant_email if tenant_email else 'Not provided'}
+        Created At: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+
+        Sent from Family Chores application
+                """
+                send_email(super_admin_email, subject, body_html, body_text)
+            except Exception as e:
+                log_system_event('super_admin_notification_failed', f'Failed to send super admin notification: {str(e)}', {'tenant_id': str(tenant_id)}, 'error')
+        # Log tenant creation event
         try:
             log_system_event('tenant_created', f'Tenant created: {tenant_name}', {'tenant_id': str(tenant_id)}, 'success')
         except Exception:
@@ -1052,6 +1101,43 @@ def api_verify_tenant_email():
         ''', (str(tenant_id),))
         conn.commit()
         
+        # Send notification email to super admin about email verification
+        super_admin_email = os.environ.get('SUPER_ADMIN_EMAIL', '').strip()
+        if super_admin_email:
+            try:
+                subject = f"Tenant Email Verified: {tenant_row['tenant_name']}"
+                body_html = f"""
+                <html>
+                    <head></head>
+                    <body>
+                    <h2>Tenant Email Verification Complete</h2>
+                    <p>A tenant has verified their email address in Family Chores:</p>
+                    <ul>
+                        <li><strong>Tenant Name:</strong> {tenant_row['tenant_name']}</li>
+                        <li><strong>Tenant ID:</strong> {tenant_id}</li>
+                        <li><strong>Email:</strong> {data.get('tenant_email', 'Not provided')}</li>
+                        <li><strong>Verified At:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</li>
+                    </ul>
+                    <hr>
+                    <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+                    </body>
+                </html>
+                """
+                body_text = f"""Tenant Email Verification Complete
+
+        A tenant has verified their email address in Family Chores:
+
+        Tenant Name: {tenant_row['tenant_name']}
+        Tenant ID: {tenant_id}
+        Email: {data.get('tenant_email', 'Not provided')}
+        Verified At: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+
+        Sent from Family Chores application
+                """
+                send_email(super_admin_email, subject, body_html, body_text)
+            except Exception as e:
+                log_system_event('super_admin_notification_failed', f'Failed to send super admin notification for tenant verification: {str(e)}', {'tenant_id': str(tenant_id)}, 'error')
+        # Log email verification event
         try:
             log_system_event('tenant_email_verified', f'Tenant email verified: {tenant_row["tenant_name"]}', {'tenant_id': str(tenant_id)}, 'success')
         except Exception:
@@ -3780,52 +3866,93 @@ def _send_digest_for_tenant(parent_emails, transactions, users, date_str, trigge
         triggered_manually: Whether this was manually triggered
         settings_dict: Optional pre-fetched email settings dict. If not provided, settings will be fetched from request context.
     """
-    # Format transactions for email
+    # Group transactions by user
+    transactions_by_user = {}
+    for t in transactions:
+        user_name = t.get('user_name', 'Unknown')
+        if user_name not in transactions_by_user:
+            transactions_by_user[user_name] = []
+        transactions_by_user[user_name].append(t)
+    
+    # Format transactions for email - separate table per user
     transactions_html = ""
     transactions_text = ""
+    
     if transactions:
-        for t in transactions:
-            transaction_type = t.get('transaction_type', '')
-            value = t.get('value', 0)
-            description = t.get('description', '')
-            user_name = t.get('user_name', 'Unknown')
-            timestamp = t.get('timestamp')
-            
-            if timestamp:
-                timestamp_aware = make_timezone_aware(timestamp)
-                time_str = timestamp_aware.strftime('%I:%M %p')
-            else:
-                time_str = 'N/A'
-            
-            if transaction_type == 'chore_completed':
-                type_label = "Chore Completed"
-                value_display = f"+{value} points"
-            elif transaction_type == 'points_redemption':
-                type_label = "Points Redeemed"
-                value_display = f"-{abs(value)} points"
-            elif transaction_type == 'cash_withdrawal':
-                type_label = "Cash Withdrawn"
-                value_display = f"-${abs(value):.2f}"
-            else:
-                type_label = "Transaction"
-                if value >= 0:
-                    value_display = f"+{value} points"
-                else:
-                    value_display = f"{value} points"
+        # Iterate through users to maintain order and show activity tables
+        for user in users:
+            user_name = user.get('full_name', 'Unknown')
+            user_transactions = transactions_by_user.get(user_name, [])
             
             transactions_html += f"""
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
-            </tr>
+        <h4 style="margin-top: 20px; margin-bottom: 10px; color: #667eea;">{user_name}'s Activity</h4>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background-color: #f5f5f5;">
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
+                </tr>
+            </thead>
+            <tbody>
             """
-            transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
+            
+            transactions_text += f"\n{user_name}'s Activity:\n"
+            
+            if user_transactions:
+                for t in user_transactions:
+                    transaction_type = t.get('transaction_type', '')
+                    value = t.get('value', 0)
+                    description = t.get('description', '')
+                    timestamp = t.get('timestamp')
+                    
+                    if timestamp:
+                        timestamp_aware = make_timezone_aware(timestamp)
+                        time_str = timestamp_aware.strftime('%I:%M %p')
+                    else:
+                        time_str = 'N/A'
+                    
+                    if transaction_type == 'chore_completed':
+                        type_label = "Chore Completed"
+                        value_display = f"+{value} points"
+                    elif transaction_type == 'points_redemption':
+                        type_label = "Points Redeemed"
+                        value_display = f"-{abs(value)} points"
+                    elif transaction_type == 'cash_withdrawal':
+                        type_label = "Cash Withdrawn"
+                        value_display = f"-${abs(value):.2f}"
+                    else:
+                        type_label = "Transaction"
+                        if value >= 0:
+                            value_display = f"+{value} points"
+                        else:
+                            value_display = f"{value} points"
+                    
+                    transactions_html += f"""
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
+                </tr>
+                """
+                    transactions_text += f"  {time_str} - {type_label}: {description} ({value_display})\n"
+            else:
+                transactions_html += """
+                <tr>
+                    <td colspan="4" style="padding: 8px; text-align: center; color: #666;">No activity</td>
+                </tr>
+                """
+                transactions_text += "  No activity\n"
+            
+            transactions_html += """
+            </tbody>
+        </table>
+            """
     else:
-        transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions yesterday</td></tr>"
-        transactions_text = "No transactions yesterday\n"
+        transactions_html = "<p style='color: #666;'>No activity yesterday</p>"
+        transactions_text = "No activity yesterday\n"
     
     # Format user balances
     balances_html = ""
@@ -3853,20 +3980,7 @@ def _send_digest_for_tenant(parent_emails, transactions, users, date_str, trigge
         <h2>Daily Digest - {date_str}</h2>
         
         <h3>Yesterday's Activity</h3>
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-            <thead>
-                <tr style="background-color: #f5f5f5;">
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
-                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
-                </tr>
-            </thead>
-            <tbody>
-                {transactions_html}
-            </tbody>
-        </table>
+        {transactions_html}
         
         <h3>Current Balances</h3>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
@@ -3948,7 +4062,7 @@ def job_timer():
                 logger.info(f"Sending daily digest email.)")
                 send_daily_digest_email()
             #if not jobs_to_trigger:
-            #    logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
+                #logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
             # Sleep for 1 minute and check again
             time_module.sleep(60)
         except Exception as e:
@@ -3962,37 +4076,41 @@ def start_job_timer():
     try:
         thread = threading.Thread(target=job_timer, daemon=True, name="JobTimerWorker")
         thread.start()
-        logger.info("job_timer started successfully")
+        logger.debug("job_timer started successfully")
     except Exception as e:
         logger.error(f"Failed to start job_timer: {e}", exc_info=True)
 
 ################################
 
-# Start the job timer for automatic daily cash out and daily digest emails
-start_job_timer()
-
-
-if __name__ == '__main__':    
+# Things to run when starting up under Gunicorn
+def gunicorn_on_starting():
     from init_db import init_database
     from backup_db import backup_database, delete_old_backups
 
     # Ensure existing database is backed up on startup
     try:
+        logger.debug(f"Backing up database")
         backup_database()
     except Exception as e:
-        logger.info(f"Database backup failed (this is OK if this is a new environment): {e}")
+        logger.error(f"Database backup failed (this is OK if this is a new environment): {e}")
 
     # Delete old database backups
     try:
+        logger.debug(f"Pruning old database backups")
         delete_old_backups()
     except Exception as e:
-        logger.info(f"Failed to deleted old database backups: {e}")
+        logger.error(f"Failed to deleted old database backups: {e}")
 
     # Ensure database is initialized
     try:
         init_database()
+        logger.debug(f"Initial database check complete")
     except Exception as e:
-        logger.info(f"Database initialization check failed (this is OK if tables already exist): {e}")
-    
-    app.run(host='0.0.0.0', port=8000, debug=False)
+        logger.error(f"Database initialization check failed (this is OK if tables already exist): {e}")
+
+    try:
+        start_job_timer()
+        logger.info("Started job timer")
+    except Exception as e:
+        logger.error("Failed to start job timer: %s", e)
 

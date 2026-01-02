@@ -906,11 +906,40 @@ function showToast(text, isError = false) {
     toast.className = `toast ${isError ? 'error' : 'success'}`;
     toast.textContent = text;
     document.body.appendChild(toast);
-    setTimeout(() => { toast.classList.add('show'); }, 10);
-    setTimeout(() => {
+    
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let autoHideTimeout;
+    
+    const dismissToast = () => {
+        clearTimeout(autoHideTimeout);
         toast.classList.remove('show');
         setTimeout(() => { try { toast.remove(); } catch (e) {} }, 300);
-    }, 3000);
+    };
+    
+    // Click to dismiss
+    toast.addEventListener('click', dismissToast);
+    
+    // Swipe to dismiss (touch)
+    toast.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    
+    toast.addEventListener('touchend', (e) => {
+        const touchEndX = e.changedTouches[0].clientX;
+        const touchEndY = e.changedTouches[0].clientY;
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+        
+        // Detect swipe (horizontal or vertical movement > 30px)
+        if (Math.abs(deltaX) > 30 || Math.abs(deltaY) > 30) {
+            dismissToast();
+        }
+    }, { passive: true });
+    
+    setTimeout(() => { toast.classList.add('show'); }, 10);
+    autoHideTimeout = setTimeout(dismissToast, 3000);
 }
 
 /**

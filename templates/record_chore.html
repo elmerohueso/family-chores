@@ -22,10 +22,8 @@
 
             <form id="recordChoreForm" novalidate>
                 <div class="form-group">
-                    <label for="user_id">User *</label>
-                    <select id="user_id" name="user_id">
-                        <option value="">Select a user...</option>
-                    </select>
+                    <div id="userName" class="user-name" style="padding: 8px 0; font-weight: 500;"></div>
+                    <input type="hidden" id="user_id" name="user_id">
                     <div id="userBalance" class="balance points" style="display: none;"></div>
                 </div>
 
@@ -101,7 +99,7 @@
 
         function closeConfirmation() {
             document.getElementById('confirmationPopup').classList.remove('show');
-            window.location.reload();
+            window.location.href = '/dashboard';
         }
 
         function resetForm() {
@@ -122,18 +120,35 @@
             try {
                 users = await getUsers();
                 
-                const userSelect = document.getElementById('user_id');
-                userSelect.innerHTML = '<option value="">Select a user...</option>';
+                // Get user_id from URL parameter
+                const urlParams = new URLSearchParams(window.location.search);
+                const userIdFromUrl = urlParams.get('user_id');
                 
-                users.forEach(user => {
-                    const option = document.createElement('option');
-                    option.value = user.user_id;
-                    option.textContent = `${user.full_name} (Balance: ${user.points_balance || 0} points)`;
-                    userSelect.appendChild(option);
-                });
-
-                // Pre-select user from URL parameter (also cleans URL)
-                preSelectUserFromUrl('user_id');
+                if (userIdFromUrl) {
+                    const user = users.find(u => u.user_id == userIdFromUrl);
+                    if (user) {
+                        // Set the hidden user_id field
+                        document.getElementById('user_id').value = user.user_id;
+                        
+                        // Display the user's name
+                        document.getElementById('userName').textContent = user.full_name;
+                        
+                        // Display the user's balance
+                        const balanceDiv = document.getElementById('userBalance');
+                        balanceDiv.textContent = `Current balance: ${user.points_balance || 0} points`;
+                        balanceDiv.style.display = 'block';
+                        
+                        // Clean up URL without reloading the page
+                        const cleanUrl = window.location.pathname;
+                        window.history.replaceState({}, '', cleanUrl);
+                    } else {
+                        showToast('User not found. Please select from dashboard.', true);
+                        setTimeout(() => { window.location.href = '/dashboard'; }, 2000);
+                    }
+                } else {
+                    showToast('No user selected. Redirecting to dashboard.', true);
+                    setTimeout(() => { window.location.href = '/dashboard'; }, 2000);
+                }
             } catch (error) {
                 console.error('Error loading users:', error);
                 showToast('Error loading users. Please refresh the page.', true);
@@ -314,21 +329,6 @@
             }
         }
 
-        // Update user balance display
-        document.getElementById('user_id').addEventListener('change', (e) => {
-            const userId = e.target.value;
-            if (userId) {
-                const user = users.find(u => u.user_id == userId);
-                if (user) {
-                    const balanceDiv = document.getElementById('userBalance');
-                    balanceDiv.textContent = `Current balance: ${user.points_balance || 0} points`;
-                    balanceDiv.style.display = 'block';
-                }
-            } else {
-                document.getElementById('userBalance').style.display = 'none';
-            }
-        });
-
         // Form submission
         document.getElementById('recordChoreForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -407,14 +407,8 @@
                     const chore = chores.find(c => c.chore_id == data.chore_id);
                     if (user && chore) {
                         const newBalance = (user.points_balance || 0) + data.value;
-                        if (userRole === 'kid') {
-                            showConfirmation(user, chore, data.value);
-                        } else {
-                            showToast(`${user.full_name} completed chore "${chore.chore}".`);
-                        }
+                        showConfirmation(user, chore, data.value);
                     }
-                    resetForm();
-                    await loadUsers();
                     submitBtn.disabled = false;
                 } else {
                     showToast(result.error || 'Error recording chore', true);

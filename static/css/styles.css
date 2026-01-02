@@ -1590,6 +1590,8 @@ input:checked + .toggle-slider:before {
     box-sizing: border-box;
     text-align: center;
     word-break: break-word;
+    cursor: pointer;
+    user-select: none;
 }
 
 .toast.show {
@@ -1786,4 +1788,18 @@ input:checked + .toggle-slider:before {
         margin: 0;
         text-align: center;
     }
+}
+
+/* Ensure number input spinners are always visible */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: inner-spin-button;
+    opacity: 1;
+    display: block;
+}
+
+/* Firefox */
+#amount {
+    appearance: auto;
+    -moz-appearance: auto;
 }

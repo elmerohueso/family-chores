@@ -25,13 +25,13 @@ except Exception:
 
 # Database connection configuration from environment variables
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
-POSTGRES_DATABASE = os.environ.get('POSTGRES_DATABASE', 'family_chores')
+POSTGRES_DB = os.environ.get('POSTGRES_DB', 'family_chores')
 POSTGRES_USER = os.environ.get('POSTGRES_USER', 'family_chores')
 POSTGRES_PASSWORD = os.environ.get('POSTGRES_PASSWORD', 'family_chores')
 POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432')
 
 # Construct database connection string
-DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DATABASE}'
+DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}'
 
 
 def create_tenants_table(cursor):

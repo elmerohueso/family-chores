@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     tzdata \
     postgresql-client \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -23,5 +24,5 @@ RUN mkdir -p /app/static/icons /data/avatars
 # Expose port
 EXPOSE 8000
 
-# Run the application with Gunicorn
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+# Run the application with Gunicorn using the shared on_starting hook
+CMD ["gunicorn", "-c", "gunicorn_conf.py", "app:app"]
