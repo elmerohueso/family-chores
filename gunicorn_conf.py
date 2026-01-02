@@ -15,29 +15,26 @@ bind = '0.0.0.0:8000'
 # gunicorn log files
 LOG_DIR = '/data/syslogs'
 os.makedirs(LOG_DIR, exist_ok=True)
-accesslog = os.path.join(LOG_DIR, 'access.log')
-errorlog = os.path.join(LOG_DIR, 'error.log')
+accesslog = os.path.join(LOG_DIR, 'requests.log')
+errorlog = os.path.join(LOG_DIR, 'worker.log')
 
 
 def on_starting(server):
-    """Called just before the master process is initialized.
-
-    Start the single job timer thread here so it runs in the master
-    process (one thread total) rather than per-worker.
+    """Called just before the master process is initialized. Runs db initialization and job timer startup.
     """
     try:
         # Import lazily to avoid circular import problems during Gunicorn
-        from app import start_job_timer, logger
-        start_job_timer()
+        from app import gunicorn_on_starting, logger
+        gunicorn_on_starting()
         try:
-            logger.info("Started job_timer via Gunicorn on_starting")
+            logger.info("Gunicorn on_starting completed successfully")
         except Exception:
             # If logger is not available for any reason, fall back to server log
-            server.log.info("Started job_timer via Gunicorn on_starting")
+            server.log.info("Gunicorn on_starting completed successfully")
     except Exception as e:
         # Ensure any start errors are recorded so deployers can diagnose
         try:
-            server.log.error("Failed to start job_timer in on_starting: %s", e)
+            server.log.error("Gunicorn on_starting failed: %s", e)
             server.log.debug(traceback.format_exc())
         except Exception:
             pass
