@@ -4080,6 +4080,8 @@ def start_job_timer():
     except Exception as e:
         logger.error(f"Failed to start job_timer: {e}", exc_info=True)
 
+################################
+
 # Things to run when starting up under Gunicorn
 def gunicorn_on_starting():
     from init_db import init_database
@@ -4111,40 +4113,4 @@ def gunicorn_on_starting():
         logger.info("Started job timer")
     except Exception as e:
         logger.error("Failed to start job timer: %s", e)
-
-################################
-
-# # The job timer should be started by the process supervisor so it runs
-# # as a single background thread. When running under Gunicorn we start it
-# # from the Gunicorn `on_starting` hook (see `gunicorn_conf.py`). For
-# # local development (running this file directly) still start the timer
-# # below inside the `__main__` block.
-
-
-# if __name__ == '__main__':    
-#     from init_db import init_database
-#     from backup_db import backup_database, delete_old_backups
-
-#     # Ensure existing database is backed up on startup
-#     try:
-#         logger.debug(f"Backing up database on startup")
-#         backup_database()
-#     except Exception as e:
-#         logger.error(f"Database backup failed (this is OK if this is a new environment): {e}")
-
-#     # Delete old database backups
-#     try:
-#         logger.debug(f"Pruning old database backups on startup")
-#         delete_old_backups()
-#     except Exception as e:
-#         logger.error(f"Failed to deleted old database backups: {e}")
-
-#     # Ensure database is initialized
-#     try:
-#         init_database()
-#         logger.debug(f"Initial database check complete on startup")
-#     except Exception as e:
-#         logger.error(f"Database initialization check failed (this is OK if tables already exist): {e}")
-    
-#     #app.run(host='0.0.0.0', port=8000, debug=False)
 
